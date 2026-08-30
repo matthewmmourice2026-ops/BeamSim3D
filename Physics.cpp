@@ -5,8 +5,18 @@
 #include <vector>
 #include <algorithm>
 #include <nlohmann/json.hpp>
+#include <raylib.h>
 
 using json = nlohmann::json;
+
+unsigned char heightmapData[64][64];
+
+float GetTerrainHeight(float x, float z) {
+    int ix = static_cast<int>(x + 32);
+    int iz = static_cast<int>(z + 32);
+    if (ix < 0 || ix >= 64 || iz < 0 || iz >= 64) return 0.0f;
+    return static_cast<float>(heightmapData[ix][iz]) / 255.0f * 10.0f; // Scale height to a reasonable range
+}
 
 void SoftBody::update(float deltaTime) {
     applyGravity();
@@ -77,8 +87,9 @@ void SoftBody::applyGravity() {
 
 void SoftBody::applyGroundCollision() {
     for (auto& node : nodes) {
-        if (node.position[1] < 0.0f) {
-            float penetrationDepth = -node.position[1];
+        float terrainHeight = GetTerrainHeight(node.position[0], node.position[2]);
+        if (node.position[1] < terrainHeight) {
+            float penetrationDepth = terrainHeight - node.position[1];
             float collisionForce = node.mass * 9.81f * penetrationDepth;
             node.force[1] += collisionForce;
 
@@ -227,4 +238,20 @@ void SoftBody::calculateCenterOfMass() {
     chassisCenter.x /= totalMass;
     chassisCenter.y /= totalMass;
     chassisCenter.z /= totalMass;
+}
+
+void SoftBody::loadHeightmap(const std::string& filename) {
+    Image image = LoadImage(filename.c_str());
+    if (image.format != PIXELFORMAT_GRAYSCALE) {
+        std::cerr << "Heightmap image must be grayscale." << std::endl;
+        return;
+    }
+
+    for (int y = 0; y < image.height; y++) {
+        for (int x = 0; x < image.width; x++) {
+            heightmapData[x][y] = GetPixelColor(image, x, y).r;
+        }
+    }
+
+    UnloadImage(image);
 }

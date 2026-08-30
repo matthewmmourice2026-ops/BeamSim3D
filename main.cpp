@@ -25,6 +25,7 @@ int main() {
 
     SoftBody softBody;
     softBody.loadConfig("vehicle.json");
+    softBody.loadHeightmap("terrain.png");
 
     std::vector<Barrier> barriers;
     srand(static_cast<unsigned int>(time(nullptr)));
@@ -41,6 +42,9 @@ int main() {
     float lastMouseX = 0.0f;
     float lastMouseY = 0.0f;
     float cameraDistance = 10.0f;
+
+    Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmapData, (Vector2){ 64.0f, 64.0f }));
+    SetMaterialTexture(&terrainModel.materials[0], MATERIAL_MAP_DIFFUSE, LoadTexture("terrain.png"));
 
     while (!WindowShouldClose()) {
         float accelerationForce = 0.0f;
@@ -82,6 +86,8 @@ int main() {
         ClearBackground(RAYWHITE);
 
         BeginMode3D(camera);
+
+        DrawModel(terrainModel, (Vector3){ -32.0f, 0.0f, -32.0f }, 1.0f, WHITE);
 
         for (const auto& beam : softBody.beams) {
             if (!beam.isBroken) {
@@ -156,6 +162,7 @@ int main() {
         camera.target = softBody.chassisCenter;
     }
 
+    UnloadModel(terrainModel);
     CloseWindow();
 
     return 0;
