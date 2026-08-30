@@ -70,6 +70,18 @@ int main() {
             softBody.reset();
         }
 
+        if (IsKeyDown(KEY_E)) {
+            if (softBody.transmission.currentGear < 6) {
+                softBody.transmission.currentGear++;
+            }
+        }
+
+        if (IsKeyDown(KEY_Q)) {
+            if (softBody.transmission.currentGear > 0) {
+                softBody.transmission.currentGear--;
+            }
+        }
+
         for (auto& wheel : softBody.wheels) {
             if (wheel.isDriven) {
                 wheel.torque = accelerationForce;
@@ -124,6 +136,8 @@ int main() {
         DrawText(TextFormat("Intact Beams: %i", std::count_if(softBody.beams.begin(), softBody.beams.end(), [](const Beam3D& beam) { return !beam.isBroken; })), 10, 40, 20, BLACK);
         DrawText(TextFormat("Broken Beams: %i", std::count_if(softBody.beams.begin(), softBody.beams.end(), [](const Beam3D& beam) { return beam.isBroken; })), 10, 70, 20, BLACK);
         DrawText(TextFormat("Speed: %.2f m/s", std::sqrt(std::pow(softBody.chassisCenter.x, 2) + std::pow(softBody.chassisCenter.y, 2) + std::pow(softBody.chassisCenter.z, 2))), 10, 100, 20, BLACK);
+        DrawText(TextFormat("Gear: %i", softBody.transmission.currentGear), 10, 130, 20, BLACK);
+        DrawText(TextFormat("RPM: %.0f", softBody.engine.rpm), 10, 160, 20, BLACK);
 
         EndDrawing();
 

@@ -28,5 +28,14 @@
         {"node_id": 5, "radius": 0.5, "spring_stiffness": 1000.0, "friction": 0.8, "is_driven": true},
         {"node_id": 6, "radius": 0.5, "spring_stiffness": 1000.0, "friction": 0.8, "is_driven": false},
         {"node_id": 7, "radius": 0.5, "spring_stiffness": 1000.0, "friction": 0.8, "is_driven": false}
-    ]
+    ],
+    "engine": {
+        "idle_rpm": 500,
+        "max_rpm": 6000,
+        "peak_torque": 300
+    },
+    "transmission": {
+        "gear_ratios": [3.0, 2.0, 1.5, 1.0, 0.8, 0.6],
+        "final_drive": 3.5
+    }
 }

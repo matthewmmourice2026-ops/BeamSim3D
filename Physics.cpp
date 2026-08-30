@@ -129,8 +129,33 @@ void SoftBody::applyTraction(float deltaTime) {
 }
 
 void SoftBody::updateEngine(float deltaTime) {
-    engine.rpm += engine.torqueCurve[int(engine.rpm)] * deltaTime;
-    if (engine.rpm > engine.maxRpm) engine.rpm = engine.maxRpm;
+    float totalAngularVelocity = 0.0f;
+    int drivenWheelCount = 0;
+    for (const auto& wheel : wheels) {
+        if (wheel.isDriven) {
+            totalAngularVelocity += wheel.angularVelocity;
+            drivenWheelCount++;
+        }
+    }
+
+    if (drivenWheelCount > 0) {
+        float averageAngularVelocity = totalAngularVelocity / drivenWheelCount;
+        engine.rpm = averageAngularVelocity * transmission.gearRatios[transmission.currentGear] * transmission.finalDrive;
+    }
+
+    // Basic torque curve
+    float torque = 0.0f;
+    if (engine.rpm < engine.idle_rpm) {
+        torque = 0.0f;
+    } else if (engine.rpm > engine.max_rpm) {
+        torque = 0.0f;
+    } else {
+        float rpmRange = engine.max_rpm - engine.idle_rpm;
+        float rpmFraction = (engine.rpm - engine.idle_rpm) / rpmRange;
+        torque = engine.peak_torque * (1.0f - std::pow(rpmFraction - 0.5f, 2));
+    }
+
+    engine.torqueCurve[int(engine.rpm)] = torque;
 }
 
 void SoftBody::updateTransmission(float deltaTime) {
@@ -216,6 +241,15 @@ void SoftBody::loadConfig(const std::string& filename) {
         wheel.isDriven = wheelJson["is_driven"];
         wheels.push_back(wheel);
     }
+
+    engine.idle_rpm = config["engine"]["idle_rpm"];
+    engine.max_rpm = config["engine"]["max_rpm"];
+    engine.peak_torque = config["engine"]["peak_torque"];
+
+    for (int i = 0; i < 6; i++) {
+        transmission.gearRatios[i] = config["transmission"]["gear_ratios"][i];
+    }
+    transmission.finalDrive = config["transmission"]["final_drive"];
 
     file.close();
 }
