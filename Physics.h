@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cmath>
+#include <fstream> // Include for std::ifstream
 
 struct Node3D {
     float position[3];
@@ -66,6 +67,8 @@ public:
     void updateEngine(float deltaTime);
     void updateTransmission(float deltaTime);
     void updateDifferential(float deltaTime);
+    void loadConfig(const std::string& filename);
+    void reset();
 };
 
 #endif // PHYSICS_H

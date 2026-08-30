@@ -1,4 +1,9 @@
 #include "Physics.h"
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <algorithm>
 
 void SoftBody::update(float deltaTime) {
     applyGravity();
@@ -123,4 +128,108 @@ void SoftBody::updateDifferential(float deltaTime) {
         }
     }
     // Open differential logic can be implemented here if needed
+}
+
+void SoftBody::loadConfig(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open config file: " << filename << std::endl;
+        return;
+    }
+
+    std::string line;
+    std::vector<Node3D> newNodes;
+    std::vector<Beam3D> newBeams;
+
+    while (std::getline(file, line)) {
+        if (line.find("nodes") != std::string::npos) {
+            std::getline(file, line);
+            while (line.find("}") == std::string::npos) {
+                std::getline(file, line);
+                if (line.find("{") != std::string::npos) {
+                    Node3D node;
+                    node.mass = 0.0f;
+                    node.omega = 0.0f;
+                    node.theta = 0.0f;
+                    while (line.find("}") == std::string::npos) {
+                        std::getline(file, line);
+                        if (line.find("id") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> node.id;
+                        } else if (line.find("x") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> node.position[0];
+                        } else if (line.find("y") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> node.position[1];
+                        } else if (line.find("z") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> node.position[2];
+                        } else if (line.find("mass") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> node.mass;
+                        }
+                    }
+                    newNodes.push_back(node);
+                }
+            }
+        } else if (line.find("beams") != std::string::npos) {
+            std::getline(file, line);
+            while (line.find("}") == std::string::npos) {
+                std::getline(file, line);
+                if (line.find("{") != std::string::npos) {
+                    Beam3D beam;
+                    beam.restLength = 0.0f;
+                    beam.stiffness = 0.0f;
+                    beam.damping = 0.0f;
+                    beam.deformThreshold = 0.0f;
+                    beam.breakThreshold = 0.0f;
+                    beam.isBroken = false;
+                    while (line.find("}") == std::string::npos) {
+                        std::getline(file, line);
+                        if (line.find("node1") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> beam.node1;
+                        } else if (line.find("node2") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> beam.node2;
+                        } else if (line.find("restLength") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> beam.restLength;
+                        } else if (line.find("stiffness") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> beam.stiffness;
+                        } else if (line.find("damping") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> beam.damping;
+                        } else if (line.find("breakThreshold") != std::string::npos) {
+                            std::stringstream ss(line);
+                            std::string temp;
+                            ss >> temp >> beam.breakThreshold;
+                        }
+                    }
+                    newBeams.push_back(beam);
+                }
+            }
+        }
+    }
+
+    nodes = newNodes;
+    beams = newBeams;
+
+    file.close();
+}
+
+void SoftBody::reset() {
+    loadConfig("vehicle.json");
 }
