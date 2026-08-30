@@ -1,5 +1,13 @@
 #include "raylib.h"
 #include "Physics.h"
+#include <vector>
+#include <cstdlib>
+#include <ctime>
+
+struct Barrier {
+    Vector3 position;
+    float size;
+};
 
 int main() {
     const int screenWidth = 800;
@@ -51,6 +59,15 @@ int main() {
         }
     }
 
+    std::vector<Barrier> barriers;
+    srand(static_cast<unsigned int>(time(nullptr)));
+    for (int i = 0; i < 10; i++) {
+        Barrier barrier;
+        barrier.position = (Vector3){ static_cast<float>(rand() % 20 - 10), static_cast<float>(rand() % 5), static_cast<float>(rand() % 20 - 10) };
+        barrier.size = static_cast<float>(rand() % 2 + 1);
+        barriers.push_back(barrier);
+    }
+
     SetTargetFPS(60);
 
     while (!WindowShouldClose()) {
@@ -61,6 +78,31 @@ int main() {
         if (IsKeyDown(KEY_S)) accelerationForce = -10.0f;
         if (IsKeyDown(KEY_A)) steeringTorque = -0.1f;
         if (IsKeyDown(KEY_D)) steeringTorque = 0.1f;
+
+        if (IsKeyDown(KEY_UP)) {
+            for (auto& beam : softBody.beams) {
+                beam.stiffness += 10.0f;
+            }
+        }
+        if (IsKeyDown(KEY_DOWN)) {
+            for (auto& beam : softBody.beams) {
+                beam.stiffness -= 10.0f;
+            }
+        }
+
+        if (IsKeyDown(KEY_R)) {
+            for (auto& node : softBody.nodes) {
+                node.position[0] = (node.position[0] < 8.0f) ? node.position[0] : (node.position[0] - 8.0f);
+                node.position[1] = (node.position[1] < 1.0f) ? node.position[1] : (node.position[1] - 1.0f);
+                node.position[2] = (node.position[2] < 8.0f) ? node.position[2] : (node.position[2] - 8.0f);
+                node.velocity[0] = 0.0f;
+                node.velocity[1] = 0.0f;
+                node.velocity[2] = 0.0f;
+            }
+            for (auto& beam : softBody.beams) {
+                beam.isBroken = false;
+            }
+        }
 
         for (int i = 0; i < 8; i++) {
             softBody.nodes[i].force[0] += accelerationForce;
@@ -83,6 +125,10 @@ int main() {
                     BLACK
                 );
             }
+        }
+
+        for (const auto& barrier : barriers) {
+            DrawCube(barrier.position, barrier.size, barrier.size, barrier.size, RED);
         }
 
         EndMode3D();
