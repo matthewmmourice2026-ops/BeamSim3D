@@ -74,14 +74,12 @@ void SoftBody::applyGravity() {
 }
 
 void SoftBody::applyGroundCollision() {
-    for (auto& node : nodes) {
-        if (node.position[1] < 0.0f) {
-            node.position[1] = 0.0f;
-            node.velocity[1] *= -0.8f; // Damping effect
-
-            // Ground friction
-            float frictionForce = 0.5f * node.velocity[0];
-            node.force[0] -= frictionForce;
+    for (auto& wheel : wheels) {
+        float distanceToGround = wheel.node->position[1] - wheel.radius;
+        if (distanceToGround < 0.0f) {
+            float penetrationDepth = -distanceToGround;
+            float suspensionForce = wheel.springStiffness * penetrationDepth;
+            wheel.node->force[1] += suspensionForce;
         }
     }
 }
@@ -93,11 +91,25 @@ void SoftBody::applyWheelTorque(float deltaTime) {
 }
 
 void SoftBody::applySteering(float deltaTime) {
-    // Implement steering logic here
+    if (steeringAngle != 0.0f) {
+        for (auto& wheel : wheels) {
+            if (wheel.isDriven) {
+                float steeringFactor = std::atan2(wheel.node->position[2] - chassisCenter[2], wheel.node->position[0] - chassisCenter[0]);
+                wheel.node->position[0] += steeringAngle * std::cos(steeringFactor);
+                wheel.node->position[2] += steeringAngle * std::sin(steeringFactor);
+            }
+        }
+    }
 }
 
 void SoftBody::applyTraction(float deltaTime) {
-    // Implement traction logic here
+    for (auto& wheel : wheels) {
+        if (wheel.isDriven) {
+            float tractionForce = wheel.torque * wheel.friction;
+            wheel.node->force[0] += tractionForce * std::cos(wheel.node->theta);
+            wheel.node->force[2] += tractionForce * std::sin(wheel.node->theta);
+        }
+    }
 }
 
 void SoftBody::updateEngine(float deltaTime) {
@@ -114,7 +126,9 @@ void SoftBody::updateTransmission(float deltaTime) {
 
     float effectiveTorque = engine.torqueCurve[int(engine.rpm)] * transmission.gearRatios[transmission.currentGear] * transmission.clutchEngagement;
     for (auto& wheel : wheels) {
-        wheel.torque = effectiveTorque;
+        if (wheel.isDriven) {
+            wheel.torque = effectiveTorque;
+        }
     }
 }
 
@@ -123,11 +137,15 @@ void SoftBody::updateDifferential(float deltaTime) {
         // Locked differential
         float totalTorque = 0.0f;
         for (auto& wheel : wheels) {
-            totalTorque += wheel.torque;
+            if (wheel.isDriven) {
+                totalTorque += wheel.torque;
+            }
         }
         float avgTorque = totalTorque / wheels.size();
         for (auto& wheel : wheels) {
-            wheel.torque = avgTorque;
+            if (wheel.isDriven) {
+                wheel.torque = avgTorque;
+            }
         }
     }
     // Open differential logic can be implemented here if needed
@@ -144,6 +162,7 @@ void SoftBody::loadConfig(const std::string& filename) {
 
     nodes.clear();
     beams.clear();
+    wheels.clear();
 
     for (const auto& nodeJson : config["nodes"]) {
         Node3D node;
@@ -168,6 +187,18 @@ void SoftBody::loadConfig(const std::string& filename) {
         beam.breakThreshold = beamJson["breakThreshold"];
         beam.isBroken = false;
         beams.push_back(beam);
+    }
+
+    for (const auto& wheelJson : config["wheels"]) {
+        Wheel wheel;
+        wheel.node = &nodes[wheelJson["node_id"]];
+        wheel.radius = wheelJson["radius"];
+        wheel.springStiffness = wheelJson["spring_stiffness"];
+        wheel.friction = wheelJson["friction"];
+        wheel.torque = 0.0f;
+        wheel.angularVelocity = 0.0f;
+        wheel.isDriven = wheelJson["is_driven"];
+        wheels.push_back(wheel);
     }
 
     file.close();

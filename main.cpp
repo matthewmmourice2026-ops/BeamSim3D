@@ -60,12 +60,16 @@ int main() {
             softBody.reset();
         }
 
-        for (int i = 0; i < 8; i++) {
-            softBody.nodes[i].force[0] += accelerationForce;
+        for (auto& wheel : softBody.wheels) {
+            if (wheel.isDriven) {
+                wheel.torque = accelerationForce;
+            }
         }
 
-        for (int i = 0; i < 8; i++) {
-            softBody.nodes[i].position[0] += steeringTorque;
+        for (auto& wheel : softBody.wheels) {
+            if (!wheel.isDriven) {
+                wheel.node->theta += steeringTorque;
+            }
         }
 
         BeginDrawing();

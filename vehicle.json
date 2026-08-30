@@ -22,5 +22,11 @@
         {"node1": 5, "node2": 7, "restLength": 1.0, "stiffness": 100.0, "damping": 0.1, "breakThreshold": 1000.0},
         {"node1": 6, "node2": 4, "restLength": 1.0, "stiffness": 100.0, "damping": 0.1, "breakThreshold": 1000.0},
         {"node1": 7, "node2": 6, "restLength": 1.0, "stiffness": 100.0, "damping": 0.1, "breakThreshold": 1000.0}
+    ],
+    "wheels": [
+        {"node_id": 4, "radius": 0.5, "spring_stiffness": 1000.0, "friction": 0.8, "is_driven": true},
+        {"node_id": 5, "radius": 0.5, "spring_stiffness": 1000.0, "friction": 0.8, "is_driven": true},
+        {"node_id": 6, "radius": 0.5, "spring_stiffness": 1000.0, "friction": 0.8, "is_driven": false},
+        {"node_id": 7, "radius": 0.5, "spring_stiffness": 1000.0, "friction": 0.8, "is_driven": false}
     ]
 }
