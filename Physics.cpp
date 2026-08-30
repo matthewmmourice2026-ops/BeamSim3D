@@ -74,12 +74,15 @@ void SoftBody::applyGravity() {
 }
 
 void SoftBody::applyGroundCollision() {
-    for (auto& wheel : wheels) {
-        float distanceToGround = wheel.node->position[1] - wheel.radius;
-        if (distanceToGround < 0.0f) {
-            float penetrationDepth = -distanceToGround;
-            float suspensionForce = wheel.springStiffness * penetrationDepth;
-            wheel.node->force[1] += suspensionForce;
+    for (auto& node : nodes) {
+        if (node.position[1] < 0.0f) {
+            float penetrationDepth = -node.position[1];
+            float collisionForce = node.mass * 9.81f * penetrationDepth;
+            node.force[1] += collisionForce;
+
+            // Basic friction
+            float frictionForce = 0.5f * node.velocity[0];
+            node.force[0] -= frictionForce;
         }
     }
 }
