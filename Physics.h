@@ -24,58 +24,6 @@ struct Beam3D {
     bool isBroken;
 };
 
-
-
-
-
-
-
-
-
-struct Wheel {
-    Node3D* node;
-    float radius;
-    float torque; // Torque applied to the wheel
-    float angularVelocity; // Angular velocity of the wheel
-};
-
-class SoftBody {
-public:
-    std::vector<Node3D> nodes;
-    std::vector<Beam3D> beams;
-    std::vector<Wheel> wheels;
-
-    void update(float deltaTime);
-    void applyGravity();
-    void applyGroundCollision();
-    void applyWheelTorque(float deltaTime);
-    void applySteering(float deltaTime);
-#ifndef PHYSICS_H
-#define PHYSICS_H
-
-#include <vector>
-#include <cmath>
-
-struct Node3D {
-    float position[3];
-    float velocity[3];
-    float force[3];
-    float mass;
-    float omega; // Angular velocity
-    float theta; // Angular position
-};
-
-struct Beam3D {
-    Node3D* node1;
-    Node3D* node2;
-    float restLength;
-    float stiffness;
-    float damping;
-    float deformThreshold;
-    float breakThreshold;
-    bool isBroken;
-};
-
 struct Wheel {
     Node3D* node;
     float radius;
@@ -118,9 +66,6 @@ public:
     void updateEngine(float deltaTime);
     void updateTransmission(float deltaTime);
     void updateDifferential(float deltaTime);
-};
-
-#endif // PHYSICS_H    void applyTraction(float deltaTime);
 };
 
 #endif // PHYSICS_H
