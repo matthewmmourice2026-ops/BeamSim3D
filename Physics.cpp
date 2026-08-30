@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 void SoftBody::update(float deltaTime) {
     applyGravity();
@@ -137,95 +140,35 @@ void SoftBody::loadConfig(const std::string& filename) {
         return;
     }
 
-    std::string line;
-    std::vector<Node3D> newNodes;
-    std::vector<Beam3D> newBeams;
+    json config = json::parse(file);
 
-    while (std::getline(file, line)) {
-        if (line.find("nodes") != std::string::npos) {
-            std::getline(file, line);
-            while (line.find("}") == std::string::npos) {
-                std::getline(file, line);
-                if (line.find("{") != std::string::npos) {
-                    Node3D node;
-                    node.mass = 0.0f;
-                    node.omega = 0.0f;
-                    node.theta = 0.0f;
-                    while (line.find("}") == std::string::npos) {
-                        std::getline(file, line);
-                        if (line.find("id") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> node.id;
-                        } else if (line.find("x") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> node.position[0];
-                        } else if (line.find("y") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> node.position[1];
-                        } else if (line.find("z") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> node.position[2];
-                        } else if (line.find("mass") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> node.mass;
-                        }
-                    }
-                    newNodes.push_back(node);
-                }
-            }
-        } else if (line.find("beams") != std::string::npos) {
-            std::getline(file, line);
-            while (line.find("}") == std::string::npos) {
-                std::getline(file, line);
-                if (line.find("{") != std::string::npos) {
-                    Beam3D beam;
-                    beam.restLength = 0.0f;
-                    beam.stiffness = 0.0f;
-                    beam.damping = 0.0f;
-                    beam.deformThreshold = 0.0f;
-                    beam.breakThreshold = 0.0f;
-                    beam.isBroken = false;
-                    while (line.find("}") == std::string::npos) {
-                        std::getline(file, line);
-                        if (line.find("node1") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> beam.node1;
-                        } else if (line.find("node2") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> beam.node2;
-                        } else if (line.find("restLength") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> beam.restLength;
-                        } else if (line.find("stiffness") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> beam.stiffness;
-                        } else if (line.find("damping") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> beam.damping;
-                        } else if (line.find("breakThreshold") != std::string::npos) {
-                            std::stringstream ss(line);
-                            std::string temp;
-                            ss >> temp >> beam.breakThreshold;
-                        }
-                    }
-                    newBeams.push_back(beam);
-                }
-            }
-        }
+    nodes.clear();
+    beams.clear();
+
+    for (const auto& nodeJson : config["nodes"]) {
+        Node3D node;
+        node.id = nodeJson["id"];
+        node.position[0] = nodeJson["x"];
+        node.position[1] = nodeJson["y"];
+        node.position[2] = nodeJson["z"];
+        node.mass = nodeJson["mass"];
+        node.omega = 0.0f;
+        node.theta = 0.0f;
+        nodes.push_back(node);
     }
 
-    nodes = newNodes;
-    beams = newBeams;
+    for (const auto& beamJson : config["beams"]) {
+        Beam3D beam;
+        beam.node1 = &nodes[beamJson["node1"]];
+        beam.node2 = &nodes[beamJson["node2"]];
+        beam.restLength = beamJson["restLength"];
+        beam.stiffness = beamJson["stiffness"];
+        beam.damping = beamJson["damping"];
+        beam.deformThreshold = 0.0f; // Assuming default value
+        beam.breakThreshold = beamJson["breakThreshold"];
+        beam.isBroken = false;
+        beams.push_back(beam);
+    }
 
     file.close();
 }

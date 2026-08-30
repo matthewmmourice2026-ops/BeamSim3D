@@ -23,41 +23,7 @@ int main() {
     camera.projection = CAMERA_PERSPECTIVE;
 
     SoftBody softBody;
-    const int numNodes = 12;
-    const float nodeSpacing = 1.0f;
-
-    for (int i = 0; i < 8; i++) {
-        Node3D node = { 0 };
-        node.position[0] = (i % 2) * nodeSpacing;
-        node.position[1] = (i / 4) * nodeSpacing + 1.0f; // Start higher to allow crumpling
-        node.position[2] = (i / 2 % 2) * nodeSpacing;
-        node.mass = 1.0f;
-        softBody.nodes.push_back(node);
-    }
-
-    for (int i = 8; i < 12; i++) {
-        Node3D node = { 0 };
-        node.position[0] = (i % 2) * nodeSpacing;
-        node.position[1] = 0.0f; // Wheel nodes at ground level
-        node.position[2] = (i / 2 % 2) * nodeSpacing;
-        node.mass = 1.0f;
-        softBody.nodes.push_back(node);
-    }
-
-    for (int i = 0; i < numNodes; i++) {
-        for (int j = i + 1; j < numNodes; j++) {
-            float distance = std::sqrt(
-                std::pow(softBody.nodes[j].position[0] - softBody.nodes[i].position[0], 2) +
-                std::pow(softBody.nodes[j].position[1] - softBody.nodes[i].position[1], 2) +
-                std::pow(softBody.nodes[j].position[2] - softBody.nodes[i].position[2], 2)
-            );
-
-            if (distance < 1.1f) {
-                Beam3D beam = { &softBody.nodes[i], &softBody.nodes[j], distance, 100.0f, 0.1f, 10.0f, 1000.0f, false };
-                softBody.beams.push_back(beam);
-            }
-        }
-    }
+    softBody.loadConfig("vehicle.json");
 
     std::vector<Barrier> barriers;
     srand(static_cast<unsigned int>(time(nullptr)));
@@ -91,17 +57,7 @@ int main() {
         }
 
         if (IsKeyDown(KEY_R)) {
-            for (auto& node : softBody.nodes) {
-                node.position[0] = (node.position[0] < 8.0f) ? node.position[0] : (node.position[0] - 8.0f);
-                node.position[1] = (node.position[1] < 1.0f) ? node.position[1] : (node.position[1] - 1.0f);
-                node.position[2] = (node.position[2] < 8.0f) ? node.position[2] : (node.position[2] - 8.0f);
-                node.velocity[0] = 0.0f;
-                node.velocity[1] = 0.0f;
-                node.velocity[2] = 0.0f;
-            }
-            for (auto& beam : softBody.beams) {
-                beam.isBroken = false;
-            }
+            softBody.reset();
         }
 
         for (int i = 0; i < 8; i++) {
