@@ -5,6 +5,8 @@ void SoftBody::update(float deltaTime) {
     applyGroundCollision();
 
     for (auto& beam : beams) {
+        if (beam.isBroken) continue;
+
         float distance = std::sqrt(
             std::pow(beam.node2->position[0] - beam.node1->position[0], 2) +
             std::pow(beam.node2->position[1] - beam.node1->position[1], 2) +
@@ -17,6 +19,15 @@ void SoftBody::update(float deltaTime) {
             (beam.node2->position[1] - beam.node1->position[1]) / distance,
             (beam.node2->position[2] - beam.node1->position[2]) / distance
         };
+
+        if (std::abs(forceMagnitude) > beam.deformThreshold) {
+            beam.restLength = distance;
+        }
+
+        if (std::abs(forceMagnitude) > beam.breakThreshold) {
+            beam.isBroken = true;
+            continue;
+        }
 
         beam.node1->force[0] += forceMagnitude * direction[0];
         beam.node1->force[1] += forceMagnitude * direction[1];

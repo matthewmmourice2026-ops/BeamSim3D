@@ -21,7 +21,7 @@ int main() {
     for (int i = 0; i < numNodes; i++) {
         Node3D node = { 0 };
         node.position[0] = (i % 2) * nodeSpacing;
-        node.position[1] = (i / 4) * nodeSpacing;
+        node.position[1] = (i / 4) * nodeSpacing + 5.0f; // Start higher to allow crumpling
         node.position[2] = (i / 2 % 2) * nodeSpacing;
         node.mass = 1.0f;
         softBody.nodes.push_back(node);
@@ -36,7 +36,7 @@ int main() {
             );
 
             if (distance < 1.1f) {
-                Beam3D beam = { &softBody.nodes[i], &softBody.nodes[j], distance, 100.0f, 0.1f };
+                Beam3D beam = { &softBody.nodes[i], &softBody.nodes[j], distance, 100.0f, 0.1f, 10.0f, 1000.0f, false };
                 softBody.beams.push_back(beam);
             }
         }
@@ -51,11 +51,13 @@ int main() {
         BeginMode3D(camera);
 
         for (const auto& beam : softBody.beams) {
-            DrawLine3D(
-                (Vector3){ beam.node1->position[0], beam.node1->position[1], beam.node1->position[2] },
-                (Vector3){ beam.node2->position[0], beam.node2->position[1], beam.node2->position[2] },
-                BLACK
-            );
+            if (!beam.isBroken) {
+                DrawLine3D(
+                    (Vector3){ beam.node1->position[0], beam.node1->position[1], beam.node1->position[2] },
+                    (Vector3){ beam.node2->position[0], beam.node2->position[1], beam.node2->position[2] },
+                    BLACK
+                );
+            }
         }
 
         EndMode3D();

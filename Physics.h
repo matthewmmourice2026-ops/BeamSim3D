@@ -17,6 +17,9 @@ struct Beam3D {
     float restLength;
     float stiffness;
     float damping;
+    float deformThreshold;
+    float breakThreshold;
+    bool isBroken;
 };
 
 class SoftBody {
