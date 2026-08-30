@@ -65,6 +65,8 @@ void SoftBody::update(float deltaTime) {
         node.force[1] = 0.0f;
         node.force[2] = 0.0f;
     }
+
+    calculateCenterOfMass();
 }
 
 void SoftBody::applyGravity() {
@@ -209,4 +211,20 @@ void SoftBody::loadConfig(const std::string& filename) {
 
 void SoftBody::reset() {
     loadConfig("vehicle.json");
+}
+
+void SoftBody::calculateCenterOfMass() {
+    chassisCenter = { 0.0f, 0.0f, 0.0f };
+    float totalMass = 0.0f;
+
+    for (const auto& node : nodes) {
+        chassisCenter.x += node.position[0] * node.mass;
+        chassisCenter.y += node.position[1] * node.mass;
+        chassisCenter.z += node.position[2] * node.mass;
+        totalMass += node.mass;
+    }
+
+    chassisCenter.x /= totalMass;
+    chassisCenter.y /= totalMass;
+    chassisCenter.z /= totalMass;
 }

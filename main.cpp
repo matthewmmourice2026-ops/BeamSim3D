@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
+#include <sstream>
 
 struct Barrier {
     Vector3 position;
@@ -35,6 +36,11 @@ int main() {
     }
 
     SetTargetFPS(60);
+
+    bool isMouseDragging = false;
+    float lastMouseX = 0.0f;
+    float lastMouseY = 0.0f;
+    float cameraDistance = 10.0f;
 
     while (!WindowShouldClose()) {
         float accelerationForce = 0.0f;
@@ -79,10 +85,24 @@ int main() {
 
         for (const auto& beam : softBody.beams) {
             if (!beam.isBroken) {
+                float distance = std::sqrt(
+                    std::pow(beam.node2->position[0] - beam.node1->position[0], 2) +
+                    std::pow(beam.node2->position[1] - beam.node1->position[1], 2) +
+                    std::pow(beam.node2->position[2] - beam.node1->position[2], 2)
+                );
+
+                float stress = std::abs(distance - beam.restLength);
+                Color beamColor = Color{ 0, 255, 0, 255 }; // Green
+                if (stress > beam.breakThreshold * 0.5f) {
+                    beamColor = Color{ 255, 0, 0, 255 }; // Red
+                } else if (stress > beam.breakThreshold * 0.25f) {
+                    beamColor = Color{ 255, 255, 0, 255 }; // Yellow
+                }
+
                 DrawLine3D(
                     (Vector3){ beam.node1->position[0], beam.node1->position[1], beam.node1->position[2] },
                     (Vector3){ beam.node2->position[0], beam.node2->position[1], beam.node2->position[2] },
-                    BLACK
+                    beamColor
                 );
             }
         }
@@ -93,23 +113,47 @@ int main() {
 
         EndMode3D();
 
+        // Telemetry HUD
+        DrawText(TextFormat("FPS: %i", GetFPS()), 10, 10, 20, BLACK);
+        DrawText(TextFormat("Intact Beams: %i", std::count_if(softBody.beams.begin(), softBody.beams.end(), [](const Beam3D& beam) { return !beam.isBroken; })), 10, 40, 20, BLACK);
+        DrawText(TextFormat("Broken Beams: %i", std::count_if(softBody.beams.begin(), softBody.beams.end(), [](const Beam3D& beam) { return beam.isBroken; })), 10, 70, 20, BLACK);
+        DrawText(TextFormat("Speed: %.2f m/s", std::sqrt(std::pow(softBody.chassisCenter.x, 2) + std::pow(softBody.chassisCenter.y, 2) + std::pow(softBody.chassisCenter.z, 2))), 10, 100, 20, BLACK);
+
         EndDrawing();
 
         softBody.update(GetFrameTime());
 
-        // Camera tracking
-        Vector3 chassisCenter = { 0.0f, 0.0f, 0.0f };
-        for (int i = 0; i < 8; i++) {
-            chassisCenter.x += softBody.nodes[i].position[0];
-            chassisCenter.y += softBody.nodes[i].position[1];
-            chassisCenter.z += softBody.nodes[i].position[2];
+        // Camera controls
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            isMouseDragging = true;
+            lastMouseX = GetMouseX();
+            lastMouseY = GetMouseY();
         }
-        chassisCenter.x /= 8.0f;
-        chassisCenter.y /= 8.0f;
-        chassisCenter.z /= 8.0f;
 
-        camera.position = (Vector3){ chassisCenter.x + 10.0f, chassisCenter.y + 10.0f, chassisCenter.z + 10.0f };
-        camera.target = chassisCenter;
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+            isMouseDragging = false;
+        }
+
+        if (isMouseDragging) {
+            float deltaX = GetMouseX() - lastMouseX;
+            float deltaY = GetMouseY() - lastMouseY;
+
+            camera.yaw -= deltaX * 0.5f;
+            camera.pitch -= deltaY * 0.5f;
+
+            lastMouseX = GetMouseX();
+            lastMouseY = GetMouseY();
+        }
+
+        if (IsMouseWheelMoved()) {
+            cameraDistance -= GetMouseWheelMove() * 0.5f;
+            cameraDistance = std::max(cameraDistance, 1.0f);
+        }
+
+        camera.position = (Vector3){ softBody.chassisCenter.x + cameraDistance * std::cos(camera.yaw) * std::cos(camera.pitch),
+                                     softBody.chassisCenter.y + cameraDistance * std::sin(camera.pitch),
+                                     softBody.chassisCenter.z + cameraDistance * std::sin(camera.yaw) * std::cos(camera.pitch) };
+        camera.target = softBody.chassisCenter;
     }
 
     CloseWindow();
