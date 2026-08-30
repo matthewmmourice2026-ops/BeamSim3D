@@ -15,13 +15,22 @@ int main() {
     camera.projection = CAMERA_PERSPECTIVE;
 
     SoftBody softBody;
-    const int numNodes = 8;
+    const int numNodes = 12;
     const float nodeSpacing = 1.0f;
 
-    for (int i = 0; i < numNodes; i++) {
+    for (int i = 0; i < 8; i++) {
         Node3D node = { 0 };
         node.position[0] = (i % 2) * nodeSpacing;
-        node.position[1] = (i / 4) * nodeSpacing + 5.0f; // Start higher to allow crumpling
+        node.position[1] = (i / 4) * nodeSpacing + 1.0f; // Start higher to allow crumpling
+        node.position[2] = (i / 2 % 2) * nodeSpacing;
+        node.mass = 1.0f;
+        softBody.nodes.push_back(node);
+    }
+
+    for (int i = 8; i < 12; i++) {
+        Node3D node = { 0 };
+        node.position[0] = (i % 2) * nodeSpacing;
+        node.position[1] = 0.0f; // Wheel nodes at ground level
         node.position[2] = (i / 2 % 2) * nodeSpacing;
         node.mass = 1.0f;
         softBody.nodes.push_back(node);
@@ -45,6 +54,22 @@ int main() {
     SetTargetFPS(60);
 
     while (!WindowShouldClose()) {
+        float accelerationForce = 0.0f;
+        float steeringTorque = 0.0f;
+
+        if (IsKeyDown(KEY_W)) accelerationForce = 10.0f;
+        if (IsKeyDown(KEY_S)) accelerationForce = -10.0f;
+        if (IsKeyDown(KEY_A)) steeringTorque = -0.1f;
+        if (IsKeyDown(KEY_D)) steeringTorque = 0.1f;
+
+        for (int i = 0; i < 8; i++) {
+            softBody.nodes[i].force[0] += accelerationForce;
+        }
+
+        for (int i = 0; i < 8; i++) {
+            softBody.nodes[i].position[0] += steeringTorque;
+        }
+
         BeginDrawing();
         ClearBackground(RAYWHITE);
 
@@ -65,6 +90,20 @@ int main() {
         EndDrawing();
 
         softBody.update(GetFrameTime());
+
+        // Camera tracking
+        Vector3 chassisCenter = { 0.0f, 0.0f, 0.0f };
+        for (int i = 0; i < 8; i++) {
+            chassisCenter.x += softBody.nodes[i].position[0];
+            chassisCenter.y += softBody.nodes[i].position[1];
+            chassisCenter.z += softBody.nodes[i].position[2];
+        }
+        chassisCenter.x /= 8.0f;
+        chassisCenter.y /= 8.0f;
+        chassisCenter.z /= 8.0f;
+
+        camera.position = (Vector3){ chassisCenter.x + 10.0f, chassisCenter.y + 10.0f, chassisCenter.z + 10.0f };
+        camera.target = chassisCenter;
     }
 
     CloseWindow();

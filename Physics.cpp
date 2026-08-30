@@ -64,6 +64,10 @@ void SoftBody::applyGroundCollision() {
         if (node.position[1] < 0.0f) {
             node.position[1] = 0.0f;
             node.velocity[1] *= -0.8f; // Damping effect
+
+            // Ground friction
+            float frictionForce = 0.5f * node.velocity[0];
+            node.force[0] -= frictionForce;
         }
     }
 }
