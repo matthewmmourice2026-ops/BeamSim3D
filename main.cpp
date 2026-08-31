@@ -190,7 +190,7 @@ int main() {
         camera.target = softBody.chassisCenter;
 
         // Procedural audio
-        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.max_rpm) * 6000.0f;
+        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.maxRpm) * 6000.0f;
         SetSoundPitch(engineSound, engineFrequency / 1000.0f);
         PlaySound(engineSound);
     }

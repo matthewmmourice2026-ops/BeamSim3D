@@ -153,10 +153,10 @@ void SoftBody::updateEngine(float deltaTime) {
     float torque = 0.0f;
     if (engine.rpm < engine.idle_rpm) {
         torque = 0.0f;
-    } else if (engine.rpm > engine.max_rpm) {
+    } else if (engine.rpm > engine.maxRpm) {
         torque = 0.0f;
     } else {
-        float rpmRange = engine.max_rpm - engine.idle_rpm;
+        float rpmRange = engine.maxRpm - engine.idle_rpm;
         float rpmFraction = (engine.rpm - engine.idle_rpm) / rpmRange;
         torque = engine.peak_torque * (1.0f - std::pow(rpmFraction - 0.5f, 2));
     }
@@ -214,7 +214,6 @@ void SoftBody::loadConfig(const std::string& filename) {
 
     for (const auto& nodeJson : config["nodes"]) {
         Node3D node;
-        node.id = nodeJson["id"];
         node.position[0] = nodeJson["x"];
         node.position[1] = nodeJson["y"];
         node.position[2] = nodeJson["z"];
@@ -249,7 +248,7 @@ void SoftBody::loadConfig(const std::string& filename) {
     }
 
     engine.idle_rpm = config["powertrain"]["engine"]["idle_rpm"];
-    engine.max_rpm = config["powertrain"]["engine"]["max_rpm"];
+    engine.maxRpm = config["powertrain"]["engine"]["max_rpm"];
     engine.peak_torque = config["powertrain"]["engine"]["peak_torque"];
 
     for (int i = 0; i < 6; i++) {

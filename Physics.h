@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <fstream> // Include for std::ifstream
+#include <nlohmann/json.hpp>
 
 struct Node3D {
     float position[3];
@@ -30,6 +31,7 @@ struct Wheel {
     float radius;
     float torque; // Torque applied to the wheel
     float angularVelocity; // Angular velocity of the wheel
+    bool isDriven; // Whether the wheel is driven
 };
 
 struct Engine {
@@ -49,14 +51,23 @@ struct Differential {
     float torqueDistribution; // 0 for open differential, 1 for locked differential
 };
 
+struct Triangle {
+    Node3D* node1;
+    Node3D* node2;
+    Node3D* node3;
+};
+
 class SoftBody {
 public:
     std::vector<Node3D> nodes;
     std::vector<Beam3D> beams;
     std::vector<Wheel> wheels;
+    std::vector<Triangle> triangles;
     Engine engine;
     Transmission transmission;
     Differential differential;
+    Vector3 chassisCenter;
+    float steeringAngle;
 
     void update(float deltaTime);
     void applyGravity();
@@ -69,6 +80,9 @@ public:
     void updateDifferential(float deltaTime);
     void loadConfig(const std::string& filename);
     void reset();
+    void calculateCenterOfMass();
+    void loadHeightmap(const std::string& filename);
+    void applyAerodynamicForces(float deltaTime);
 };
 
 #endif // PHYSICS_H
