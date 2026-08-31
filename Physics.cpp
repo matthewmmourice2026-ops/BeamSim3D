@@ -8,7 +8,52 @@ void SoftBody::loadConfig(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Failed to open config file: " << filename << std::endl;
-        procedurallyGenerateVehicle();
+        // Generate a basic vehicle
+        nodes.clear();
+        beams.clear();
+        wheels.clear();
+        triangles.clear();
+
+        // Define 8 nodes for a box (width 2, length 4, height 1)
+        nodes.push_back({ {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 0.0f, 1.0f}, {2.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 1.0f, 0.0f}, {2.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 1.0f, 1.0f}, {2.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+
+        // Define beams for the box
+        beams.push_back({ &nodes[0], &nodes[1], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[2], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[3], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[4], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[5], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[6], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[7], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+
+        // Define wheels
+        wheels.push_back({ &nodes[0], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[1], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[2], 0.5f, 1000.0f, 0.8f, false });
+        wheels.push_back({ &nodes[3], 0.5f, 1000.0f, 0.8f, false });
+
+        // Define engine and transmission
+        engine.rpm = 1000;
+        engine.maxRpm = 7000;
+        engine.peakTorque = 300;
+
+        transmission.finalDrive = 3.5f;
+        transmission.gearRatios = {-3.0f, 0.0f, 3.5f, 2.1f, 1.4f, 1.0f};
+        transmission.currentGear = 2;
+
+        std::cout << "Fallback vehicle generated" << std::endl;
         return;
     }
 
@@ -86,54 +131,72 @@ void SoftBody::loadConfig(const std::string& filename) {
         file.close();
     } catch (...) {
         std::cerr << "Error parsing config file: " << filename << std::endl;
-        procedurallyGenerateVehicle();
+        // Generate a basic vehicle
+        nodes.clear();
+        beams.clear();
+        wheels.clear();
+        triangles.clear();
+
+        // Define 8 nodes for a box (width 2, length 4, height 1)
+        nodes.push_back({ {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 0.0f, 1.0f}, {2.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 1.0f, 0.0f}, {2.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {2.0f, 1.0f, 1.0f}, {2.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+
+        // Define beams for the box
+        beams.push_back({ &nodes[0], &nodes[1], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[2], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[3], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[4], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[5], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[6], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[7], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+
+        // Define wheels
+        wheels.push_back({ &nodes[0], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[1], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[2], 0.5f, 1000.0f, 0.8f, false });
+        wheels.push_back({ &nodes[3], 0.5f, 1000.0f, 0.8f, false });
+
+        // Define engine and transmission
+        engine.rpm = 1000;
+        engine.maxRpm = 7000;
+        engine.peakTorque = 300;
+
+        transmission.finalDrive = 3.5f;
+        transmission.gearRatios = {-3.0f, 0.0f, 3.5f, 2.1f, 1.4f, 1.0f};
+        transmission.currentGear = 2;
+
+        std::cout << "Fallback vehicle generated" << std::endl;
     }
 }
 
-void SoftBody::procedurallyGenerateVehicle() {
-    // Generate a default 8-node, 4-wheel soft-body box car
-    nodes.clear();
-    beams.clear();
-    wheels.clear();
-    triangles.clear();
-
-    // Define 8 nodes for a box
-    nodes.push_back({ {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-    nodes.push_back({ {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-    nodes.push_back({ {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-    nodes.push_back({ {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-    nodes.push_back({ {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-    nodes.push_back({ {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-    nodes.push_back({ {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-    nodes.push_back({ {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-
-    // Define beams for the box
-    beams.push_back({ &nodes[0], &nodes[1], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[0], &nodes[2], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[1], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[2], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[0], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[1], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[2], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[3], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[4], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[5], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[6], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-    beams.push_back({ &nodes[7], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-
-    // Define wheels
-    wheels.push_back({ &nodes[4], 0.5f, 1000.0f, 0.8f, true });
-    wheels.push_back({ &nodes[5], 0.5f, 1000.0f, 0.8f, true });
-    wheels.push_back({ &nodes[6], 0.5f, 1000.0f, 0.8f, false });
-    wheels.push_back({ &nodes[7], 0.5f, 1000.0f, 0.8f, false });
-
-    // Define engine and transmission
-    engine.idle_rpm = 500;
-    engine.max_rpm = 6000;
-    engine.peak_torque = 300;
-
-    for (int i = 0; i < 6; i++) {
-        transmission.gearRatios[i] = 3.0f / (i + 1);
+void SoftBody::calculateCenterOfMass() {
+    if (nodes.empty()) {
+        chassisCenter = {0, 0, 0};
+        return;
     }
-    transmission.finalDrive = 3.5f;
+
+    Vector3 sum = {0, 0, 0};
+    float totalMass = 0.0f;
+
+    for (const auto& node : nodes) {
+        sum.x += node.position[0] * node.mass;
+        sum.y += node.position[1] * node.mass;
+        sum.z += node.position[2] * node.mass;
+        totalMass += node.mass;
+    }
+
+    chassisCenter.x = sum.x / totalMass;
+    chassisCenter.y = sum.y / totalMass;
+    chassisCenter.z = sum.z / totalMass;
 }
