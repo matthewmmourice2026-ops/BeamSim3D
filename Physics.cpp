@@ -117,9 +117,20 @@ void SoftBody::applySteering(float deltaTime) {
     if (steeringAngle != 0.0f) {
         for (auto& wheel : wheels) {
             if (wheel.isDriven) {
-                float steeringFactor = std::atan2(wheel.node->position.z - chassisCenter.z, wheel.node->position.x - chassisCenter.x);
-                wheel.node->position.x += steeringAngle * std::cos(steeringFactor);
-                wheel.node->position.z += steeringAngle * std::sin(steeringFactor);
+                Vector3 wheelPosition = { wheel.node->position[0], wheel.node->position[1], wheel.node->position[2] };
+                Vector3 chassisPosition = { chassisCenter.x, chassisCenter.y, chassisCenter.z };
+
+                Vector3 direction = Vector3Subtract(wheelPosition, chassisPosition);
+                Vector3 steeringDirection = Vector3Normalize(Vector3CrossProduct(direction, (Vector3){ 0.0f, 1.0f, 0.0f }));
+
+                float steeringFactor = std::atan2(steeringDirection.z, steeringDirection.x);
+                float newSteeringFactor = steeringFactor + steeringAngle;
+
+                Vector3 newDirection = Vector3Rotate(direction, (Vector3){ 0.0f, 1.0f, 0.0f }, newSteeringFactor);
+
+                wheel.node->position[0] = chassisPosition.x + newDirection.x;
+                wheel.node->position[1] = chassisPosition.y + newDirection.y;
+                wheel.node->position[2] = chassisPosition.z + newDirection.z;
             }
         }
     }
