@@ -116,9 +116,9 @@ void SoftBody::applySteering(float deltaTime) {
     if (steeringAngle != 0.0f) {
         for (auto& wheel : wheels) {
             if (wheel.isDriven) {
-                float steeringFactor = std::atan2(wheel.node->position[2] - chassisCenter[2], wheel.node->position[0] - chassisCenter[0]);
-                wheel.node->position[0] += steeringAngle * std::cos(steeringFactor);
-                wheel.node->position[2] += steeringAngle * std::sin(steeringFactor);
+                float steeringFactor = std::atan2(wheel.node->position.z - chassisCenter.z, wheel.node->position.x - chassisCenter.x);
+                wheel.node->position.x += steeringAngle * std::cos(steeringFactor);
+                wheel.node->position.z += steeringAngle * std::sin(steeringFactor);
             }
         }
     }
@@ -291,14 +291,14 @@ void SoftBody::calculateCenterOfMass() {
 
 bool SoftBody::loadHeightmap(const std::string& filename) {
     Image image = LoadImage(filename.c_str());
-    if (image.format != PIXELFORMAT_GRAYSCALE) {
+    if (image.format != PIXELFORMAT_UNCOMPRESSED_GRAYSCALE) {
         std::cerr << "Heightmap image must be grayscale." << std::endl;
         return false;
     }
 
     for (int y = 0; y < image.height; y++) {
         for (int x = 0; x < image.width; x++) {
-            heightmapData[x][y] = GetPixelColor(image, x, y).r;
+            heightmapData[x][y] = GetImageColor(image, x, y).r;
         }
     }
 
