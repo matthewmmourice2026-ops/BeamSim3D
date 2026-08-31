@@ -29,12 +29,10 @@ struct Beam3D {
 };
 
 struct Wheel {
-    Node3D* node;
-    float radius;
-    float friction = 1.0f;
+    Node3D* node = nullptr;
+    float radius = 0.35f;
     float torque = 0.0f;
-    bool isDriven = false;
-    float angularVelocity = 0.0f; // Added angularVelocity
+    float angularVelocity = 0.0f;
 };
 
 struct Engine {
