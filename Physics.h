@@ -48,11 +48,9 @@ struct Engine {
 };
 
 struct Transmission {
-    float finalDrive = 3.5f;
-    float final_drive = 3.5f;
-    std::vector<float> gearRatios = { -3.0f, 0.0f, 3.5f, 2.1f, 1.4f, 1.0f, 0.8f };
-    int currentGear = 2; // Neutral or 1st
-    float clutchEngagement = 0.0f; // Added clutchEngagement
+    std::vector<float> gearRatios;
+    int currentGear = 1;
+    float clutchEngagement = 0.0f;
 };
 
 struct Differential {
