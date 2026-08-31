@@ -50,7 +50,7 @@ int main() {
     if (!softBody.loadHeightmap("terrain.png")) {
         heightmap = GenImagePerlinNoise(64, 64, 0, 0, 1.0f);
     }
-    Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmap, (Vector2){ 64.0f, 64.0f }));
+    Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmap, (Vector3){ 64.0f, 10.0f, 64.0f }));
     SetMaterialTexture(&terrainModel.materials[0], MATERIAL_MAP_DIFFUSE, LoadTexture("terrain.png"));
 
     InitAudioDevice();
@@ -196,7 +196,7 @@ int main() {
         camera.target = softBody.chassisCenter;
 
         // Procedural audio
-        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.max_rpm) * 6000.0f;
+        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.maxRpm) * 6000.0f;
         SetSoundPitch(engineSound, engineFrequency / 1000.0f);
         PlaySound(engineSound);
     }
