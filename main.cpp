@@ -18,7 +18,8 @@ int main() {
     Texture2D terrainTexture = LoadTextureFromImage(terrainImage);
     UnloadImage(terrainImage);
 
-    bool audioLoaded = LoadSound("src/assets/engine.wav") != NULL;
+    Sound engineSound = LoadSound("src/assets/engine.wav");
+    bool audioLoaded = IsSoundReady(engineSound);
 
     SetTargetFPS(60);
 
@@ -45,7 +46,7 @@ int main() {
 
     UnloadTexture(terrainTexture);
     if (audioLoaded) {
-        UnloadSound("src/assets/engine.wav");
+        UnloadSound(engineSound);
     }
 
     CloseWindow();
