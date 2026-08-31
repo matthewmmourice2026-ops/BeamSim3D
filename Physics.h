@@ -1,11 +1,12 @@
 #ifndef PHYSICS_H
 #define PHYSICS_H
 
-#include <raylib.h>
-#include <raymath.h>
+#include <iostream>
 #include <vector>
 #include <string>
-#include <fstream> // Include for std::ifstream
+#include <cmath>
+#include <raylib.h>
+#include <raymath.h>
 #include <nlohmann/json.hpp>
 
 struct Node3D {
@@ -31,23 +32,28 @@ struct Beam3D {
 struct Wheel {
     Node3D* node;
     float radius;
-    float torque; // Torque applied to the wheel
-    float angularVelocity; // Angular velocity of the wheel
-    bool isDriven; // Whether the wheel is driven
+    float friction = 1.0f;
+    float torque = 0.0f;
+    bool isDriven = false;
 };
 
 struct Engine {
-    float rpm;
-    float maxRpm;
-    float idleRpm;
+    float rpm = 1000.0f;
+    float idle_rpm = 1000.0f;
+    float idleRpm = 1000.0f;
+    float max_rpm = 7000.0f;
+    float maxRpm = 7000.0f;
+    float peak_torque = 300.0f;
+    float peakTorque = 300.0f;
     float torqueCurve[100];
     float powerCurve[100];
 };
 
 struct Transmission {
-    float gearRatios[6];
-    int currentGear;
-    float clutchEngagement;
+    float finalDrive = 3.5f;
+    float final_drive = 3.5f;
+    std::vector<float> gearRatios = { -3.0f, 0.0f, 3.5f, 2.1f, 1.4f, 1.0f, 0.8f };
+    int currentGear = 2; // Neutral or 1st
 };
 
 struct Differential {
