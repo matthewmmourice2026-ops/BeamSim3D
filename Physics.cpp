@@ -46,8 +46,8 @@ void SoftBody::loadConfig(const std::string& filename) {
 
         // Define engine and transmission
         engine.rpm = 1000;
-        engine.maxRpm = 7000;
-        engine.peakTorque = 300;
+        engine.max_rpm = 7000;
+        engine.peak_torque = 300;
 
         transmission.finalDrive = 3.5f;
         transmission.gearRatios = {-3.0f, 0.0f, 3.5f, 2.1f, 1.4f, 1.0f};
@@ -169,8 +169,8 @@ void SoftBody::loadConfig(const std::string& filename) {
 
         // Define engine and transmission
         engine.rpm = 1000;
-        engine.maxRpm = 7000;
-        engine.peakTorque = 300;
+        engine.max_rpm = 7000;
+        engine.peak_torque = 300;
 
         transmission.finalDrive = 3.5f;
         transmission.gearRatios = {-3.0f, 0.0f, 3.5f, 2.1f, 1.4f, 1.0f};
