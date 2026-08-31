@@ -21,11 +21,23 @@ int main() {
     Sound engineSound = LoadSound("src/assets/engine.wav");
     bool audioLoaded = engineSound.frameCount > 0;
 
+    Camera camera = { 0 };
+    camera.position = (Vector3){ 0.0f, 10.0f, 10.0f };
+    camera.target = (Vector3){ 0.0f, 1.0f, 0.0f };
+    camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
+    camera.fovy = 45.0f;
+    camera.type = CAMERA_PERSPECTIVE;
+
     SetTargetFPS(60);
 
     while (!WindowShouldClose()) {
         BeginDrawing();
-        ClearBackground(RAYWHITE);
+        ClearBackground(SKYBLUE);
+
+        BeginMode3D(camera);
+
+        // Draw the terrain
+        DrawTextureEx(terrainTexture, (Vector2){ 0, 0 }, 0.0f, 1.0f, WHITE);
 
         // Draw the vehicle's nodes, beams, and wheels
         for (const auto& node : vehicle.nodes) {
@@ -40,6 +52,8 @@ int main() {
         for (const auto& wheel : vehicle.wheels) {
             DrawSphere((Vector3){ wheel.node->position[0], wheel.node->position[1], wheel.node->position[2] }, wheel.radius, GREEN);
         }
+
+        EndMode3D();
 
         EndDrawing();
     }

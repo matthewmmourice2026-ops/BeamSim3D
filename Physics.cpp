@@ -1,6 +1,8 @@
 #include "Physics.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <cmath>
+#include <limits>
 
 using json = nlohmann::json;
 
@@ -15,34 +17,34 @@ void SoftBody::loadConfig(const std::string& filename) {
         triangles.clear();
 
         // Define 8 nodes for a box (width 2, length 4, height 1)
-        nodes.push_back({ {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 0.0f, 1.0f}, {2.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 1.0f, 0.0f}, {2.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 1.0f, 1.0f}, {2.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 2.0f, -2.0f}, {-1.0f, 2.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 2.0f, -2.0f}, { 1.0f, 2.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 2.0f,  2.0f}, { 1.0f, 2.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 2.0f,  2.0f}, {-1.0f, 2.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 1.0f, -2.0f}, {-1.0f, 1.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 1.0f, -2.0f}, { 1.0f, 1.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 1.0f,  2.0f}, { 1.0f, 1.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 1.0f,  2.0f}, {-1.0f, 1.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
 
         // Define beams for the box
-        beams.push_back({ &nodes[0], &nodes[1], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[2], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[3], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[4], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[5], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[6], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[7], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[1], Vector3Distance(nodes[0].position, nodes[1].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[2], Vector3Distance(nodes[0].position, nodes[2].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[3], Vector3Distance(nodes[1].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[3], Vector3Distance(nodes[2].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[4], Vector3Distance(nodes[0].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[5], Vector3Distance(nodes[1].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[6], Vector3Distance(nodes[2].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[3], &nodes[7], Vector3Distance(nodes[3].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[4], &nodes[5], Vector3Distance(nodes[4].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[5], &nodes[7], Vector3Distance(nodes[5].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[6], &nodes[4], Vector3Distance(nodes[6].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[7], &nodes[6], Vector3Distance(nodes[7].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
 
         // Define wheels
-        wheels.push_back({ &nodes[0], 0.5f, 1000.0f, 0.8f, true });
-        wheels.push_back({ &nodes[1], 0.5f, 1000.0f, 0.8f, true });
-        wheels.push_back({ &nodes[2], 0.5f, 1000.0f, 0.8f, false });
-        wheels.push_back({ &nodes[3], 0.5f, 1000.0f, 0.8f, false });
+        wheels.push_back({ &nodes[4], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[5], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[6], 0.5f, 1000.0f, 0.8f, false });
+        wheels.push_back({ &nodes[7], 0.5f, 1000.0f, 0.8f, false });
 
         // Define engine and transmission
         engine.rpm = 1000;
@@ -138,34 +140,34 @@ void SoftBody::loadConfig(const std::string& filename) {
         triangles.clear();
 
         // Define 8 nodes for a box (width 2, length 4, height 1)
-        nodes.push_back({ {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 0.0f, 0.0f}, {2.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 0.0f, 1.0f}, {2.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 1.0f, 0.0f}, {2.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
-        nodes.push_back({ {2.0f, 1.0f, 1.0f}, {2.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 2.0f, -2.0f}, {-1.0f, 2.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 2.0f, -2.0f}, { 1.0f, 2.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 2.0f,  2.0f}, { 1.0f, 2.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 2.0f,  2.0f}, {-1.0f, 2.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 1.0f, -2.0f}, {-1.0f, 1.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 1.0f, -2.0f}, { 1.0f, 1.0f, -2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ { 1.0f, 1.0f,  2.0f}, { 1.0f, 1.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
+        nodes.push_back({ {-1.0f, 1.0f,  2.0f}, {-1.0f, 1.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
 
         // Define beams for the box
-        beams.push_back({ &nodes[0], &nodes[1], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[2], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[3], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[4], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[5], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[6], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[7], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[1], Vector3Distance(nodes[0].position, nodes[1].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[2], Vector3Distance(nodes[0].position, nodes[2].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[3], Vector3Distance(nodes[1].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[3], Vector3Distance(nodes[2].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[4], Vector3Distance(nodes[0].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[5], Vector3Distance(nodes[1].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[6], Vector3Distance(nodes[2].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[3], &nodes[7], Vector3Distance(nodes[3].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[4], &nodes[5], Vector3Distance(nodes[4].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[5], &nodes[7], Vector3Distance(nodes[5].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[6], &nodes[4], Vector3Distance(nodes[6].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[7], &nodes[6], Vector3Distance(nodes[7].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
 
         // Define wheels
-        wheels.push_back({ &nodes[0], 0.5f, 1000.0f, 0.8f, true });
-        wheels.push_back({ &nodes[1], 0.5f, 1000.0f, 0.8f, true });
-        wheels.push_back({ &nodes[2], 0.5f, 1000.0f, 0.8f, false });
-        wheels.push_back({ &nodes[3], 0.5f, 1000.0f, 0.8f, false });
+        wheels.push_back({ &nodes[4], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[5], 0.5f, 1000.0f, 0.8f, true });
+        wheels.push_back({ &nodes[6], 0.5f, 1000.0f, 0.8f, false });
+        wheels.push_back({ &nodes[7], 0.5f, 1000.0f, 0.8f, false });
 
         // Define engine and transmission
         engine.rpm = 1000;
@@ -199,4 +201,8 @@ void SoftBody::calculateCenterOfMass() {
     chassisCenter.x = sum.x / totalMass;
     chassisCenter.y = sum.y / totalMass;
     chassisCenter.z = sum.z / totalMass;
+
+    if (std::isnan(chassisCenter.x) || std::isnan(chassisCenter.y) || std::isnan(chassisCenter.z)) {
+        chassisCenter = {0.0f, 1.0f, 0.0f};
+    }
 }
