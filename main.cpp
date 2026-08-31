@@ -42,6 +42,7 @@ int main() {
     float lastMouseX = 0.0f;
     float lastMouseY = 0.0f;
     float cameraDistance = 10.0f;
+    float timeDilation = 1.0f;
 
     Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmapData, (Vector2){ 64.0f, 64.0f }));
     SetMaterialTexture(&terrainModel.materials[0], MATERIAL_MAP_DIFFUSE, LoadTexture("terrain.png"));
@@ -80,6 +81,13 @@ int main() {
             if (softBody.transmission.currentGear > 0) {
                 softBody.transmission.currentGear--;
             }
+        }
+
+        if (IsKeyDown(KEY_T)) {
+            timeDilation = 0.1f;
+        }
+        if (IsKeyDown(KEY_Y)) {
+            timeDilation = 1.0f;
         }
 
         for (auto& wheel : softBody.wheels) {
@@ -138,10 +146,11 @@ int main() {
         DrawText(TextFormat("Speed: %.2f m/s", std::sqrt(std::pow(softBody.chassisCenter.x, 2) + std::pow(softBody.chassisCenter.y, 2) + std::pow(softBody.chassisCenter.z, 2))), 10, 100, 20, BLACK);
         DrawText(TextFormat("Gear: %i", softBody.transmission.currentGear), 10, 130, 20, BLACK);
         DrawText(TextFormat("RPM: %.0f", softBody.engine.rpm), 10, 160, 20, BLACK);
+        DrawText(TextFormat("Time Dilation: %.1fx", timeDilation), 10, 190, 20, BLACK);
 
         EndDrawing();
 
-        softBody.update(GetFrameTime());
+        softBody.update(GetFrameTime() * timeDilation);
 
         // Camera controls
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
