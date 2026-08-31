@@ -1,16 +1,5 @@
-#include "raylib.h"
 #include "Physics.h"
-#include <vector>
-#include <cstdlib>
-#include <ctime>
-#include <sstream>
-#include <algorithm>
-#include <cmath>
-
-struct Barrier {
-    Vector3 position;
-    float size;
-};
+#include <raylib.h>
 
 int main() {
     const int screenWidth = 800;
@@ -25,183 +14,39 @@ int main() {
     camera.fovy = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 
-    SoftBody softBody;
-    softBody.loadConfig("vehicle.json");
-    softBody.loadHeightmap("terrain.png");
-
-    std::vector<Barrier> barriers;
-    srand(static_cast<unsigned int>(time(nullptr)));
-    for (int i = 0; i < 10; i++) {
-        Barrier barrier;
-        barrier.position = (Vector3){ static_cast<float>(rand() % 20 - 10), static_cast<float>(rand() % 5), static_cast<float>(rand() % 20 - 10) };
-        barrier.size = static_cast<float>(rand() % 2 + 1);
-        barriers.push_back(barrier);
-    }
+    SoftBody vehicle;
+    vehicle.loadConfig("vehicle.json");
 
     SetTargetFPS(60);
 
-    bool isMouseDragging = false;
-    float lastMouseX = 0.0f;
-    float lastMouseY = 0.0f;
-    float cameraDistance = 10.0f;
-    float timeDilation = 1.0f;
-
-    Image heightmap = GenImagePerlinNoise(64, 64, 0, 0, 1.0f);
-    if (!softBody.loadHeightmap("terrain.png")) {
-        heightmap = GenImagePerlinNoise(64, 64, 0, 0, 1.0f);
-    }
-    Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmap, (Vector3){ 64.0f, 10.0f, 64.0f }));
-    SetMaterialTexture(&terrainModel.materials[0], MATERIAL_MAP_DIFFUSE, LoadTexture("terrain.png"));
-
-    InitAudioDevice();
-
-    Sound engineSound = LoadSound("engine.wav");
-    SetSoundVolume(engineSound, 0.5f);
-
     while (!WindowShouldClose()) {
-        float accelerationForce = 0.0f;
-        float steeringTorque = 0.0f;
-
-        if (IsKeyDown(KEY_W)) accelerationForce = 10.0f;
-        if (IsKeyDown(KEY_S)) accelerationForce = -10.0f;
-        if (IsKeyDown(KEY_A)) steeringTorque = -0.1f;
-        if (IsKeyDown(KEY_D)) steeringTorque = 0.1f;
-
-        if (IsKeyDown(KEY_UP)) {
-            for (auto& beam : softBody.beams) {
-                beam.stiffness += 10.0f;
-            }
-        }
-        if (IsKeyDown(KEY_DOWN)) {
-            for (auto& beam : softBody.beams) {
-                beam.stiffness -= 10.0f;
-            }
-        }
-
-        if (IsKeyDown(KEY_R)) {
-            softBody.reset();
-        }
-
-        if (IsKeyDown(KEY_E)) {
-            if (softBody.transmission.currentGear < 6) {
-                softBody.transmission.currentGear++;
-            }
-        }
-
-        if (IsKeyDown(KEY_Q)) {
-            if (softBody.transmission.currentGear > 0) {
-                softBody.transmission.currentGear--;
-            }
-        }
-
-        if (IsKeyDown(KEY_T)) {
-            timeDilation = 0.1f;
-        }
-        if (IsKeyDown(KEY_Y)) {
-            timeDilation = 1.0f;
-        }
-
-        for (auto& wheel : softBody.wheels) {
-            if (wheel.isDriven) {
-                wheel.torque = accelerationForce;
-            }
-        }
-
-        for (auto& wheel : softBody.wheels) {
-            if (!wheel.isDriven) {
-                wheel.node->theta += steeringTorque;
-            }
-        }
-
         BeginDrawing();
-        ClearBackground(RAYWHITE);
 
-        BeginMode3D(camera);
+            ClearBackground(RAYWHITE);
 
-        DrawModel(terrainModel, (Vector3){ -32.0f, 0.0f, -32.0f }, 1.0f, WHITE);
+            BeginMode3D(camera);
 
-        for (const auto& beam : softBody.beams) {
-            if (!beam.isBroken) {
-                float distance = std::sqrt(
-                    std::pow(beam.node2->position[0] - beam.node1->position[0], 2) +
-                    std::pow(beam.node2->position[1] - beam.node1->position[1], 2) +
-                    std::pow(beam.node2->position[2] - beam.node1->position[2], 2)
-                );
-
-                float stress = std::abs(distance - beam.restLength);
-                Color beamColor = Color{ 0, 255, 0, 255 }; // Green
-                if (stress > beam.breakThreshold * 0.5f) {
-                    beamColor = Color{ 255, 0, 0, 255 }; // Red
-                } else if (stress > beam.breakThreshold * 0.25f) {
-                    beamColor = Color{ 255, 255, 0, 255 }; // Yellow
+                // Draw the vehicle's nodes, beams, and wheels
+                for (const auto& node : vehicle.nodes) {
+                    DrawSphere((Vector3){ node.position[0], node.position[1], node.position[2] }, 0.1f, RED);
                 }
 
-                DrawLine3D(
-                    (Vector3){ beam.node1->position[0], beam.node1->position[1], beam.node1->position[2] },
-                    (Vector3){ beam.node2->position[0], beam.node2->position[1], beam.node2->position[2] },
-                    beamColor
-                );
-            }
-        }
+                for (const auto& beam : vehicle.beams) {
+                    DrawLine3D((Vector3){ beam.node1->position[0], beam.node1->position[1], beam.node1->position[2] },
+                               (Vector3){ beam.node2->position[0], beam.node2->position[1], beam.node2->position[2] }, BLUE);
+                }
 
-        for (const auto& barrier : barriers) {
-            DrawCube(barrier.position, barrier.size, barrier.size, barrier.size, RED);
-        }
+                for (const auto& wheel : vehicle.wheels) {
+                    DrawSphere((Vector3){ wheel.node->position[0], wheel.node->position[1], wheel.node->position[2] }, wheel.radius, GREEN);
+                }
 
-        EndMode3D();
-
-        // Telemetry HUD
-        DrawText(TextFormat("FPS: %i", GetFPS()), 10, 10, 20, BLACK);
-        DrawText(TextFormat("Intact Beams: %i", std::count_if(softBody.beams.begin(), softBody.beams.end(), [](const Beam3D& beam) { return !beam.isBroken; })), 10, 40, 20, BLACK);
-        DrawText(TextFormat("Broken Beams: %i", std::count_if(softBody.beams.begin(), softBody.beams.end(), [](const Beam3D& beam) { return beam.isBroken; })), 10, 70, 20, BLACK);
-        DrawText(TextFormat("Speed: %.2f m/s", std::sqrt(std::pow(softBody.chassisCenter.x, 2) + std::pow(softBody.chassisCenter.y, 2) + std::pow(softBody.chassisCenter.z, 2))), 10, 100, 20, BLACK);
-        DrawText(TextFormat("Gear: %i", softBody.transmission.currentGear), 10, 130, 20, BLACK);
-        DrawText(TextFormat("RPM: %.0f", softBody.engine.rpm), 10, 160, 20, BLACK);
-        DrawText(TextFormat("Time Dilation: %.1fx", timeDilation), 10, 190, 20, BLACK);
+            EndMode3D();
 
         EndDrawing();
 
-        softBody.update(GetFrameTime() * timeDilation);
-
-        // Camera controls
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-            isMouseDragging = true;
-            lastMouseX = GetMouseX();
-            lastMouseY = GetMouseY();
-        }
-
-        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-            isMouseDragging = false;
-        }
-
-        if (isMouseDragging) {
-            float deltaX = GetMouseX() - lastMouseX;
-            float deltaY = GetMouseY() - lastMouseY;
-
-            camera.position.x -= deltaX * 0.05f;
-            camera.position.z -= deltaY * 0.05f;
-
-            lastMouseX = GetMouseX();
-            lastMouseY = GetMouseY();
-        }
-
-        if (GetMouseWheelMove() != 0) {
-            cameraDistance -= GetMouseWheelMove() * 0.5f;
-            cameraDistance = std::max(cameraDistance, 1.0f);
-        }
-
-        camera.position = (Vector3){ softBody.chassisCenter.x + cameraDistance * std::cos(camera.position.x) * std::cos(camera.position.z),
-                                     softBody.chassisCenter.y + cameraDistance * std::sin(camera.position.z),
-                                     softBody.chassisCenter.z + cameraDistance * std::sin(camera.position.x) * std::cos(camera.position.z) };
-        camera.target = softBody.chassisCenter;
-
-        // Procedural audio
-        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.maxRpm) * 6000.0f;
-        SetSoundPitch(engineSound, engineFrequency / 1000.0f);
-        PlaySound(engineSound);
+        vehicle.update(GetFrameTime());
     }
 
-    UnloadModel(terrainModel);
     CloseWindow();
 
     return 0;
