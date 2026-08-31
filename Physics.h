@@ -33,6 +33,8 @@ struct Wheel {
     float radius = 0.35f;
     float torque = 0.0f;
     float angularVelocity = 0.0f;
+    float friction = 1.0f;
+    bool isDriven = false;
 };
 
 struct Engine {
@@ -51,6 +53,8 @@ struct Transmission {
     std::vector<float> gearRatios;
     int currentGear = 1;
     float clutchEngagement = 0.0f;
+    float finalDrive = 3.5f;
+    float final_drive = 3.5f;
 };
 
 struct Differential {

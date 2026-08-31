@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <raylib.h>
+#include <raymath.h>
 
 using json = nlohmann::json;
 
