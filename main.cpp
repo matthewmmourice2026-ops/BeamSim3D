@@ -19,7 +19,7 @@ int main() {
     UnloadImage(terrainImage);
 
     Sound engineSound = LoadSound("src/assets/engine.wav");
-    bool audioLoaded = IsSoundReady(engineSound);
+    bool audioLoaded = engineSound.frameCount > 0;
 
     SetTargetFPS(60);
 
