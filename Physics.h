@@ -37,6 +37,7 @@ struct Wheel {
 struct Engine {
     float rpm;
     float maxRpm;
+    float idle_rpm;
     float torqueCurve[100];
     float powerCurve[100];
 };
@@ -81,7 +82,7 @@ public:
     void loadConfig(const std::string& filename);
     void reset();
     void calculateCenterOfMass();
-    void loadHeightmap(const std::string& filename);
+    bool loadHeightmap(const std::string& filename);
     void applyAerodynamicForces(float deltaTime);
 };
 

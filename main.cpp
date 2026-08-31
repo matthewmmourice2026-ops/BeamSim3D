@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <ctime>
 #include <sstream>
+#include <algorithm>
+#include <cmath>
 
 struct Barrier {
     Vector3 position;
@@ -44,7 +46,11 @@ int main() {
     float cameraDistance = 10.0f;
     float timeDilation = 1.0f;
 
-    Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmapData, (Vector2){ 64.0f, 64.0f }));
+    Image heightmap = GenImagePerlinNoise(64, 64, 0, 0, 1.0f);
+    if (!softBody.loadHeightmap("terrain.png")) {
+        heightmap = GenImagePerlinNoise(64, 64, 0, 0, 1.0f);
+    }
+    Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmap, (Vector2){ 64.0f, 64.0f }));
     SetMaterialTexture(&terrainModel.materials[0], MATERIAL_MAP_DIFFUSE, LoadTexture("terrain.png"));
 
     InitAudioDevice();
@@ -172,25 +178,25 @@ int main() {
             float deltaX = GetMouseX() - lastMouseX;
             float deltaY = GetMouseY() - lastMouseY;
 
-            camera.yaw -= deltaX * 0.5f;
-            camera.pitch -= deltaY * 0.5f;
+            camera.position.x -= deltaX * 0.05f;
+            camera.position.z -= deltaY * 0.05f;
 
             lastMouseX = GetMouseX();
             lastMouseY = GetMouseY();
         }
 
-        if (IsMouseWheelMoved()) {
+        if (GetMouseWheelMove() != 0) {
             cameraDistance -= GetMouseWheelMove() * 0.5f;
             cameraDistance = std::max(cameraDistance, 1.0f);
         }
 
-        camera.position = (Vector3){ softBody.chassisCenter.x + cameraDistance * std::cos(camera.yaw) * std::cos(camera.pitch),
-                                     softBody.chassisCenter.y + cameraDistance * std::sin(camera.pitch),
-                                     softBody.chassisCenter.z + cameraDistance * std::sin(camera.yaw) * std::cos(camera.pitch) };
+        camera.position = (Vector3){ softBody.chassisCenter.x + cameraDistance * std::cos(camera.position.x) * std::cos(camera.position.z),
+                                     softBody.chassisCenter.y + cameraDistance * std::sin(camera.position.z),
+                                     softBody.chassisCenter.z + cameraDistance * std::sin(camera.position.x) * std::cos(camera.position.z) };
         camera.target = softBody.chassisCenter;
 
         // Procedural audio
-        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.maxRpm) * 6000.0f;
+        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.max_rpm) * 6000.0f;
         SetSoundPitch(engineSound, engineFrequency / 1000.0f);
         PlaySound(engineSound);
     }

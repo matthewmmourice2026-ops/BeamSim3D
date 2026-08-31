@@ -153,10 +153,10 @@ void SoftBody::updateEngine(float deltaTime) {
     float torque = 0.0f;
     if (engine.rpm < engine.idle_rpm) {
         torque = 0.0f;
-    } else if (engine.rpm > engine.maxRpm) {
+    } else if (engine.rpm > engine.max_rpm) {
         torque = 0.0f;
     } else {
-        float rpmRange = engine.maxRpm - engine.idle_rpm;
+        float rpmRange = engine.max_rpm - engine.idle_rpm;
         float rpmFraction = (engine.rpm - engine.idle_rpm) / rpmRange;
         torque = engine.peak_torque * (1.0f - std::pow(rpmFraction - 0.5f, 2));
     }
@@ -248,7 +248,7 @@ void SoftBody::loadConfig(const std::string& filename) {
     }
 
     engine.idle_rpm = config["powertrain"]["engine"]["idle_rpm"];
-    engine.maxRpm = config["powertrain"]["engine"]["max_rpm"];
+    engine.max_rpm = config["powertrain"]["engine"]["max_rpm"];
     engine.peak_torque = config["powertrain"]["engine"]["peak_torque"];
 
     for (int i = 0; i < 6; i++) {
@@ -289,11 +289,11 @@ void SoftBody::calculateCenterOfMass() {
     chassisCenter.z /= totalMass;
 }
 
-void SoftBody::loadHeightmap(const std::string& filename) {
+bool SoftBody::loadHeightmap(const std::string& filename) {
     Image image = LoadImage(filename.c_str());
     if (image.format != PIXELFORMAT_GRAYSCALE) {
         std::cerr << "Heightmap image must be grayscale." << std::endl;
-        return;
+        return false;
     }
 
     for (int y = 0; y < image.height; y++) {
@@ -303,6 +303,7 @@ void SoftBody::loadHeightmap(const std::string& filename) {
     }
 
     UnloadImage(image);
+    return true;
 }
 
 void SoftBody::applyAerodynamicForces(float deltaTime) {
