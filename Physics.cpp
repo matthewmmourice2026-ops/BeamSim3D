@@ -86,16 +86,16 @@ void SoftBody::applyGravity() {
 }
 
 void SoftBody::applyGroundCollision() {
-    for (auto& node : nodes) {
-        float terrainHeight = GetTerrainHeight(node.position[0], node.position[2]);
-        if (node.position[1] < terrainHeight) {
-            float penetrationDepth = terrainHeight - node.position[1];
-            float collisionForce = node.mass * 9.81f * penetrationDepth;
-            node.force[1] += collisionForce;
+    for (auto& wheel : wheels) {
+        float distanceToGround = wheel.node->position[1] - wheel.radius;
+        if (distanceToGround < 0.0f) {
+            float penetrationDepth = -distanceToGround;
+            float suspensionForce = wheel.springStiffness * penetrationDepth;
+            wheel.node->force[1] += suspensionForce;
 
             // Basic friction
             float frictionForce = 0.5f * node.velocity[0];
-            node.force[0] -= frictionForce;
+            wheel.node->force[0] -= frictionForce;
         }
     }
 }
@@ -234,7 +234,6 @@ void SoftBody::loadConfig(const std::string& filename) {
         Wheel wheel;
         wheel.node = &nodes[wheelJson["node_id"]];
         wheel.radius = wheelJson["radius"];
-        wheel.springStiffness = wheelJson["spring_stiffness"];
         wheel.friction = wheelJson["friction"];
         wheel.torque = 0.0f;
         wheel.angularVelocity = 0.0f;
@@ -242,14 +241,14 @@ void SoftBody::loadConfig(const std::string& filename) {
         wheels.push_back(wheel);
     }
 
-    engine.idle_rpm = config["engine"]["idle_rpm"];
-    engine.max_rpm = config["engine"]["max_rpm"];
-    engine.peak_torque = config["engine"]["peak_torque"];
+    engine.idle_rpm = config["powertrain"]["engine"]["idle_rpm"];
+    engine.max_rpm = config["powertrain"]["engine"]["max_rpm"];
+    engine.peak_torque = config["powertrain"]["engine"]["peak_torque"];
 
     for (int i = 0; i < 6; i++) {
-        transmission.gearRatios[i] = config["transmission"]["gear_ratios"][i];
+        transmission.gearRatios[i] = config["powertrain"]["transmission"]["gear_ratios"][i];
     }
-    transmission.finalDrive = config["transmission"]["final_drive"];
+    transmission.finalDrive = config["powertrain"]["transmission"]["final_drive"];
 
     file.close();
 }
