@@ -10,6 +10,7 @@
 
 struct Node3D {
     float position[3];
+    float initialPosition[3];
     float velocity[3];
     float force[3];
     float mass;
@@ -93,6 +94,7 @@ public:
     void calculateCenterOfMass();
     bool loadHeightmap(const std::string& filename);
     void applyAerodynamicForces(float deltaTime);
+    void resetVehicle();
 };
 
 #endif // PHYSICS_H

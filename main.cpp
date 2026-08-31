@@ -42,9 +42,33 @@ int main() {
 
             EndMode3D();
 
+            // Telemetry HUD
+            Vector3 velocity = Vector3Subtract(vehicle.chassisCenter, (Vector3){ vehicle.chassisCenter.x, vehicle.chassisCenter.y - 0.1f, vehicle.chassisCenter.z });
+            float speed = Vector3Length(velocity);
+            std::string speedText = "Speed: " + std::to_string(static_cast<int>(speed)) + " m/s";
+            std::string rpmText = "RPM: " + std::to_string(static_cast<int>(vehicle.engine.rpm));
+            std::string gearText = "Gear: " + std::to_string(vehicle.transmission.currentGear);
+            int brokenBeams = 0;
+            for (const auto& beam : vehicle.beams) {
+                if (beam.isBroken) {
+                    brokenBeams++;
+                }
+            }
+            std::string beamsText = "Beams: " + std::to_string(brokenBeams) + "/" + std::to_string(vehicle.beams.size());
+
+            DrawText(speedText.c_str(), 10, 10, 20, BLACK);
+            DrawText(rpmText.c_str(), 10, 40, 20, BLACK);
+            DrawText(gearText.c_str(), 10, 70, 20, BLACK);
+            DrawText(beamsText.c_str(), 10, 100, 20, BLACK);
+
         EndDrawing();
 
         vehicle.update(GetFrameTime());
+
+        // Input Handling
+        if (IsKeyPressed(KEY_R)) {
+            vehicle.resetVehicle();
+        }
     }
 
     CloseWindow();

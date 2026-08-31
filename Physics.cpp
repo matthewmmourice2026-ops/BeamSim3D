@@ -218,10 +218,16 @@ void SoftBody::loadConfig(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Failed to open config file: " << filename << std::endl;
+        procedurallyGenerateVehicle();
         return;
     }
 
-    json config = json::parse(file);
+    json config = json::parse(file, nullptr, false);
+    if (config.is_discarded()) {
+        std::cerr << "Failed to parse config file: " << filename << std::endl;
+        procedurallyGenerateVehicle();
+        return;
+    }
 
     nodes.clear();
     beams.clear();
@@ -233,6 +239,12 @@ void SoftBody::loadConfig(const std::string& filename) {
         node.position[0] = nodeJson["x"];
         node.position[1] = nodeJson["y"];
         node.position[2] = nodeJson["z"];
+        node.initialPosition[0] = nodeJson["x"];
+        node.initialPosition[1] = nodeJson["y"];
+        node.initialPosition[2] = nodeJson["z"];
+        node.velocity[0] = 0.0f;
+        node.velocity[1] = 0.0f;
+        node.velocity[2] = 0.0f;
         node.mass = nodeJson["mass"];
         node.omega = 0.0f;
         node.theta = 0.0f;
@@ -360,4 +372,80 @@ void SoftBody::applyAerodynamicForces(float deltaTime) {
         triangle.node3->force[1] += dragForce.y + liftForce.y;
         triangle.node3->force[2] += dragForce.z + liftForce.z;
     }
+}
+
+void SoftBody::resetVehicle() {
+    for (auto& node : nodes) {
+        node.position[0] = node.initialPosition[0];
+        node.position[1] = node.initialPosition[1];
+        node.position[2] = node.initialPosition[2];
+        node.velocity[0] = 0.0f;
+        node.velocity[1] = 0.0f;
+        node.velocity[2] = 0.0f;
+    }
+
+    for (auto& beam : beams) {
+        beam.isBroken = false;
+    }
+
+    engine.rpm = engine.idle_rpm;
+    transmission.currentGear = 1;
+}
+
+void SoftBody::procedurallyGenerateVehicle() {
+    nodes.clear();
+    beams.clear();
+    wheels.clear();
+    triangles.clear();
+
+    // Generate 8 nodes forming a cube (width 2.0, length 4.0, height 1.0)
+    Node3D nodes[8] = {
+        { { -1.0f, 0.5f, -2.0f }, { -1.0f, 0.5f, -2.0f }, 1.0f },
+        { { 1.0f, 0.5f, -2.0f }, { 1.0f, 0.5f, -2.0f }, 1.0f },
+        { { -1.0f, 0.5f, 2.0f }, { -1.0f, 0.5f, 2.0f }, 1.0f },
+        { { 1.0f, 0.5f, 2.0f }, { 1.0f, 0.5f, 2.0f }, 1.0f },
+        { { -1.0f, -0.5f, -2.0f }, { -1.0f, -0.5f, -2.0f }, 1.0f },
+        { { 1.0f, -0.5f, -2.0f }, { 1.0f, -0.5f, -2.0f }, 1.0f },
+        { { -1.0f, -0.5f, 2.0f }, { -1.0f, -0.5f, 2.0f }, 1.0f },
+        { { 1.0f, -0.5f, 2.0f }, { 1.0f, -0.5f, 2.0f }, 1.0f }
+    };
+
+    for (int i = 0; i < 8; i++) {
+        this->nodes.push_back(nodes[i]);
+    }
+
+    // Fully cross-braced with beams (break threshold of 5000.0)
+    for (int i = 0; i < 8; i++) {
+        for (int j = i + 1; j < 8; j++) {
+            Beam3D beam;
+            beam.node1 = &this->nodes[i];
+            beam.node2 = &this->nodes[j];
+            beam.restLength = std::sqrt(
+                std::pow(beam.node2->position[0] - beam.node1->position[0], 2) +
+                std::pow(beam.node2->position[1] - beam.node1->position[1], 2) +
+                std::pow(beam.node2->position[2] - beam.node1->position[2], 2)
+            );
+            beam.stiffness = 100.0f;
+            beam.damping = 0.1f;
+            beam.deformThreshold = 0.0f;
+            beam.breakThreshold = 5000.0f;
+            beam.isBroken = false;
+            beams.push_back(beam);
+        }
+    }
+
+    // 4 wheels attached to the bottom corners
+    Wheel wheels[4] = {
+        { &this->nodes[4], 0.5f, 0.0f, 0.0f, 0.8f, true },
+        { &this->nodes[5], 0.5f, 0.0f, 0.0f, 0.8f, true },
+        { &this->nodes[6], 0.5f, 0.0f, 0.0f, 0.8f, false },
+        { &this->nodes[7], 0.5f, 0.0f, 0.0f, 0.8f, false }
+    };
+
+    for (int i = 0; i < 4; i++) {
+        this->wheels.push_back(wheels[i]);
+    }
+
+    // Reset vehicle configuration
+    resetVehicle();
 }
