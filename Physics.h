@@ -1,8 +1,10 @@
 #ifndef PHYSICS_H
 #define PHYSICS_H
 
+#include <raylib.h>
+#include <raymath.h>
 #include <vector>
-#include <cmath>
+#include <string>
 #include <fstream> // Include for std::ifstream
 #include <nlohmann/json.hpp>
 
@@ -37,7 +39,7 @@ struct Wheel {
 struct Engine {
     float rpm;
     float maxRpm;
-    float idle_rpm;
+    float idleRpm;
     float torqueCurve[100];
     float powerCurve[100];
 };
