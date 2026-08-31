@@ -31,6 +31,7 @@ void SoftBody::update(float deltaTime) {
         applyWheelTorque(subStepTime);
         applySteering(subStepTime);
         applyTraction(subStepTime);
+        applyAerodynamicForces(subStepTime);
 
         for (auto& beam : beams) {
             if (beam.isBroken) continue;
@@ -209,6 +210,7 @@ void SoftBody::loadConfig(const std::string& filename) {
     nodes.clear();
     beams.clear();
     wheels.clear();
+    triangles.clear();
 
     for (const auto& nodeJson : config["nodes"]) {
         Node3D node;
@@ -255,6 +257,16 @@ void SoftBody::loadConfig(const std::string& filename) {
     }
     transmission.finalDrive = config["powertrain"]["transmission"]["final_drive"];
 
+    if (config.count("triangles")) {
+        for (const auto& triangleJson : config["triangles"]) {
+            Triangle triangle;
+            triangle.node1 = &nodes[triangleJson["node1"]];
+            triangle.node2 = &nodes[triangleJson["node2"]];
+            triangle.node3 = &nodes[triangleJson["node3"]];
+            triangles.push_back(triangle);
+        }
+    }
+
     file.close();
 }
 
@@ -292,4 +304,44 @@ void SoftBody::loadHeightmap(const std::string& filename) {
     }
 
     UnloadImage(image);
+}
+
+void SoftBody::applyAerodynamicForces(float deltaTime) {
+    const float rho = 1.225f; // Air density at sea level
+    const float Cd = 0.3f; // Drag coefficient
+    const float Cl = 0.5f; // Lift coefficient
+
+    for (const auto& triangle : triangles) {
+        Vector3 v1 = { triangle.node2->position[0] - triangle.node1->position[0],
+                      triangle.node2->position[1] - triangle.node1->position[1],
+                      triangle.node2->position[2] - triangle.node1->position[2] };
+        Vector3 v2 = { triangle.node3->position[0] - triangle.node1->position[0],
+                      triangle.node3->position[1] - triangle.node1->position[1],
+                      triangle.node3->position[2] - triangle.node1->position[2] };
+
+        Vector3 normal = Vector3Normalize(Vector3CrossProduct(v1, v2));
+        float area = 0.5f * Vector3Length(Vector3CrossProduct(v1, v2));
+
+        Vector3 airspeed = { -chassisCenter.x, -chassisCenter.y, -chassisCenter.z };
+        Vector3 airspeedUnit = Vector3Normalize(airspeed);
+        float airspeedMagnitude = Vector3Length(airspeed);
+
+        float dragForceMagnitude = 0.5f * rho * airspeedMagnitude * airspeedMagnitude * Cd * area;
+        Vector3 dragForce = Vector3Scale(normal, -dragForceMagnitude);
+
+        float liftForceMagnitude = 0.5f * rho * airspeedMagnitude * airspeedMagnitude * Cl * area;
+        Vector3 liftForce = Vector3Scale(Vector3CrossProduct(airspeedUnit, normal), liftForceMagnitude);
+
+        triangle.node1->force[0] += dragForce.x + liftForce.x;
+        triangle.node1->force[1] += dragForce.y + liftForce.y;
+        triangle.node1->force[2] += dragForce.z + liftForce.z;
+
+        triangle.node2->force[0] += dragForce.x + liftForce.x;
+        triangle.node2->force[1] += dragForce.y + liftForce.y;
+        triangle.node2->force[2] += dragForce.z + liftForce.z;
+
+        triangle.node3->force[0] += dragForce.x + liftForce.x;
+        triangle.node3->force[1] += dragForce.y + liftForce.y;
+        triangle.node3->force[2] += dragForce.z + liftForce.z;
+    }
 }

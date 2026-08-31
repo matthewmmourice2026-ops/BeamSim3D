@@ -47,6 +47,11 @@ int main() {
     Model terrainModel = LoadModelFromMesh(GenMeshHeightmap(heightmapData, (Vector2){ 64.0f, 64.0f }));
     SetMaterialTexture(&terrainModel.materials[0], MATERIAL_MAP_DIFFUSE, LoadTexture("terrain.png"));
 
+    InitAudioDevice();
+
+    Sound engineSound = LoadSound("engine.wav");
+    SetSoundVolume(engineSound, 0.5f);
+
     while (!WindowShouldClose()) {
         float accelerationForce = 0.0f;
         float steeringTorque = 0.0f;
@@ -183,6 +188,11 @@ int main() {
                                      softBody.chassisCenter.y + cameraDistance * std::sin(camera.pitch),
                                      softBody.chassisCenter.z + cameraDistance * std::sin(camera.yaw) * std::cos(camera.pitch) };
         camera.target = softBody.chassisCenter;
+
+        // Procedural audio
+        float engineFrequency = 1000.0f + (softBody.engine.rpm / softBody.engine.max_rpm) * 6000.0f;
+        SetSoundPitch(engineSound, engineFrequency / 1000.0f);
+        PlaySound(engineSound);
     }
 
     UnloadModel(terrainModel);
