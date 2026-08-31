@@ -1,3 +1,9 @@
+#include "Physics.h"
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
 void SoftBody::loadConfig(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -79,4 +85,52 @@ void SoftBody::loadConfig(const std::string& filename) {
     }
 
     file.close();
+}
+
+void SoftBody::procedurallyGenerateVehicle() {
+    // Generate a default 8-node, 4-wheel soft-body box car
+    nodes.clear();
+    beams.clear();
+    wheels.clear();
+    triangles.clear();
+
+    // Define 8 nodes for a box
+    nodes.push_back({ {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+    nodes.push_back({ {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+    nodes.push_back({ {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+    nodes.push_back({ {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+    nodes.push_back({ {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+    nodes.push_back({ {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+    nodes.push_back({ {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+    nodes.push_back({ {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0f, 0.0f });
+
+    // Define beams for the box
+    beams.push_back({ &nodes[0], &nodes[1], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[0], &nodes[2], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[1], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[2], &nodes[3], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[0], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[1], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[2], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[3], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[4], &nodes[5], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[5], &nodes[7], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[6], &nodes[4], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+    beams.push_back({ &nodes[7], &nodes[6], 1.0f, 100.0f, 0.1f, 1000.0f, false });
+
+    // Define wheels
+    wheels.push_back({ &nodes[4], 0.5f, 1000.0f, 0.8f, true });
+    wheels.push_back({ &nodes[5], 0.5f, 1000.0f, 0.8f, true });
+    wheels.push_back({ &nodes[6], 0.5f, 1000.0f, 0.8f, false });
+    wheels.push_back({ &nodes[7], 0.5f, 1000.0f, 0.8f, false });
+
+    // Define engine and transmission
+    engine.idle_rpm = 500;
+    engine.max_rpm = 6000;
+    engine.peak_torque = 300;
+
+    for (int i = 0; i < 6; i++) {
+        transmission.gearRatios[i] = 3.0f / (i + 1);
+    }
+    transmission.finalDrive = 3.5f;
 }

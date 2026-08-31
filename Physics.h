@@ -41,11 +41,8 @@ struct Wheel {
 struct Engine {
     float rpm = 1000.0f;
     float idle_rpm = 1000.0f;
-    float idleRpm = 1000.0f;
     float max_rpm = 7000.0f;
-    float maxRpm = 7000.0f;
     float peak_torque = 300.0f;
-    float peakTorque = 300.0f;
     float torqueCurve[100];
     float powerCurve[100];
 };
@@ -55,7 +52,6 @@ struct Transmission {
     int currentGear = 1;
     float clutchEngagement = 0.0f;
     float finalDrive = 3.5f;
-    float final_drive = 3.5f;
 };
 
 struct Differential {
@@ -95,6 +91,7 @@ public:
     bool loadHeightmap(const std::string& filename);
     void applyAerodynamicForces(float deltaTime);
     void resetVehicle();
+    void procedurallyGenerateVehicle();
 };
 
 #endif // PHYSICS_H

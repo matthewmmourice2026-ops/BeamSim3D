@@ -1,13 +1,54 @@
-// Draw the vehicle's nodes, beams, and wheels
-for (const auto& node : vehicle.nodes) {
-    DrawSphere((Vector3){ node.position[0], node.position[1], node.position[2] }, 0.1f, RED);
-}
+#include "Physics.h"
+#include <raylib.h>
 
-for (const auto& beam : vehicle.beams) {
-    DrawLine3D((Vector3){ beam.node1->position[0], beam.node1->position[1], beam.node1->position[2] },
-               (Vector3){ beam.node2->position[0], beam.node2->position[1], beam.node2->position[2] }, BLUE);
-}
+int main() {
+    const int screenWidth = 800;
+    const int screenHeight = 450;
 
-for (const auto& wheel : vehicle.wheels) {
-    DrawSphere((Vector3){ wheel.node->position[0], wheel.node->position[1], wheel.node->position[2] }, wheel.radius, GREEN);
+    InitWindow(screenWidth, screenHeight, "BeamSim3D");
+
+    SoftBody vehicle;
+    vehicle.loadConfig("src/assets/vehicle.json");
+
+    Image terrainImage = LoadImage("src/assets/terrain.png");
+    if (terrainImage.data == NULL) {
+        terrainImage = GenImagePerlinNoise(64, 64, 0, 0, 1.0f);
+    }
+
+    Texture2D terrainTexture = LoadTextureFromImage(terrainImage);
+    UnloadImage(terrainImage);
+
+    bool audioLoaded = LoadSound("src/assets/engine.wav") != NULL;
+
+    SetTargetFPS(60);
+
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+
+        // Draw the vehicle's nodes, beams, and wheels
+        for (const auto& node : vehicle.nodes) {
+            DrawSphere((Vector3){ node.position[0], node.position[1], node.position[2] }, 0.1f, RED);
+        }
+
+        for (const auto& beam : vehicle.beams) {
+            DrawLine3D((Vector3){ beam.node1->position[0], beam.node1->position[1], beam.node1->position[2] },
+                       (Vector3){ beam.node2->position[0], beam.node2->position[1], beam.node2->position[2] }, BLUE);
+        }
+
+        for (const auto& wheel : vehicle.wheels) {
+            DrawSphere((Vector3){ wheel.node->position[0], wheel.node->position[1], wheel.node->position[2] }, wheel.radius, GREEN);
+        }
+
+        EndDrawing();
+    }
+
+    UnloadTexture(terrainTexture);
+    if (audioLoaded) {
+        UnloadSound("src/assets/engine.wav");
+    }
+
+    CloseWindow();
+
+    return 0;
 }
