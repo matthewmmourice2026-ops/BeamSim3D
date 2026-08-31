@@ -17,6 +17,13 @@ int main() {
     SoftBody vehicle;
     vehicle.loadConfig("vehicle.json");
 
+    bool audioLoaded = true;
+    Sound engineSound = LoadSound("engine.wav");
+    if (!engineSound.loaded) {
+        audioLoaded = false;
+        std::cerr << "Failed to load engine sound: engine.wav" << std::endl;
+    }
+
     SetTargetFPS(60);
 
     while (!WindowShouldClose()) {
@@ -69,8 +76,15 @@ int main() {
         if (IsKeyPressed(KEY_R)) {
             vehicle.resetVehicle();
         }
+
+        // Audio Handling
+        if (audioLoaded) {
+            PlaySound(engineSound);
+            SetSoundPitch(engineSound, vehicle.engine.rpm / 1000.0f);
+        }
     }
 
+    UnloadSound(engineSound);
     CloseWindow();
 
     return 0;
