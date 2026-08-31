@@ -7,7 +7,6 @@
 #include <cmath>
 #include <raylib.h>
 #include <raymath.h>
-#include <nlohmann/json.hpp>
 
 struct Node3D {
     float position[3];
