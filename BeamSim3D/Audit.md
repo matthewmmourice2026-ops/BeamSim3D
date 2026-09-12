@@ -13,9 +13,9 @@ BeamSim3D is a 3D physics simulation engine designed to model soft-body dynamics
 
 ### `main.cpp`
 **Role**: Application Entry Point & Rendering Loop.
-- Initializes the windowing system and rendering context using raylib.
+- Initializes the windowing system, audio device, and rendering context using raylib.
 - Handles high-level asset loading (terrain textures, engine sounds).
-- Contains the main simulation loop where physics updates are called every frame.
+- Contains the main simulation loop where physics updates are called every frame based on `GetFrameTime()`.
 - Manages camera logic and renders 3D primitives representing nodes, beams, and wheels.
 
 ### `Physics.h`
@@ -38,6 +38,10 @@ BeamSim3D is a 3D physics simulation engine designed to model soft-body dynamics
 
 ## Recent Refactors & Compatibility
 - **Raylib 5.0 Update**: The camera system was refactored to remove deprecated `SetCameraMode` calls. It now uses explicit projection settings (`CAMERA_PERSPECTIVE`) and the updated `UpdateCamera(&camera, CAMERA_CUSTOM)` call for modern raylib compatibility.
+- **Audio Lifecycle Management**: Added proper initialization (`InitAudioDevice`) and cleanup (`CloseAudioDevice`) to ensure stable audio handling across different platforms.
+- **Render Pipeline Correction**: Fixed a rendering bug where 2D terrain textures were being incorrectly projected into the 3D camera matrix; they are now drawn before entering `BeginMode3D`.
+- **Physics Loop Integration**: Integrated `GetFrameTime()` to provide consistent, frame-rate independent physics updates via `vehicle.update(deltaTime)`.
+- **CMake Target Linking**: Refactored macOS build logic to use target-specific include and link directories (`target_include_directories`, `target_link_directories`) for better modularity and added explicit OpenGL library discovery.
 
 ## Build & Execution
 - **Requirements**: Raylib library must be installed on the host system.
