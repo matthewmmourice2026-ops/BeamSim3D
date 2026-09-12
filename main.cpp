@@ -26,8 +26,7 @@ int main() {
     camera.target = (Vector3){ 0.0f, 1.0f, 0.0f };
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     camera.fovy = 45.0f;
-
-    SetCameraMode(camera, CAMERA_PERSPECTIVE);
+    camera.projection = CAMERA_PERSPECTIVE;
 
     SetTargetFPS(60);
 
@@ -35,6 +34,7 @@ int main() {
         BeginDrawing();
         ClearBackground(SKYBLUE);
 
+        UpdateCamera(&camera, CAMERA_CUSTOM);
         BeginMode3D(camera);
 
         // Draw the terrain
