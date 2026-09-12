@@ -1,0 +1,3 @@
+/Users/user/Downloads/BeamSim3D/build/CMakeFiles/beam_sim.dir
+/Users/user/Downloads/BeamSim3D/build/CMakeFiles/edit_cache.dir
+/Users/user/Downloads/BeamSim3D/build/CMakeFiles/rebuild_cache.dir
