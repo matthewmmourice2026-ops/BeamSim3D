@@ -36,13 +36,13 @@ class ImprovedNeuralNetwork(nn.Module):
         
         return x
 
-# Example usage:
-net = ImprovedNeuralNetwork()
-print(net)
+if __name__ == "__main__":
+    net = ImprovedNeuralNetwork()
+    print(net)
 
-# Dummy input to see the output
-net.eval()
-input_tensor = torch.tensor([[1.0, 2.0, 3.0]])
-with torch.no_grad():
-    output = net(input_tensor)
-print(output)
+    # Dummy input to see the output
+    net.eval()
+    input_tensor = torch.tensor([[1.0, 2.0, 3.0]])
+    with torch.no_grad():
+        output = net(input_tensor)
+    print(output)
