@@ -6,6 +6,10 @@
 
 using json = nlohmann::json;
 
+static inline Vector3 toVec3(const float p[3]) {
+    return Vector3{ p[0], p[1], p[2] };
+}
+
 void SoftBody::loadConfig(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -27,18 +31,18 @@ void SoftBody::loadConfig(const std::string& filename) {
         nodes.push_back({ {-1.0f, 1.0f,  2.0f}, {-1.0f, 1.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
 
         // Define beams for the box
-        beams.push_back({ &nodes[0], &nodes[1], Vector3Distance(nodes[0].position, nodes[1].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[2], Vector3Distance(nodes[0].position, nodes[2].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[3], Vector3Distance(nodes[1].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[3], Vector3Distance(nodes[2].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[4], Vector3Distance(nodes[0].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[5], Vector3Distance(nodes[1].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[6], Vector3Distance(nodes[2].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[3], &nodes[7], Vector3Distance(nodes[3].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[4], &nodes[5], Vector3Distance(nodes[4].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[5], &nodes[7], Vector3Distance(nodes[5].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[6], &nodes[4], Vector3Distance(nodes[6].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[7], &nodes[6], Vector3Distance(nodes[7].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[1], Vector3Distance(toVec3(nodes[0].position), toVec3(nodes[1].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[2], Vector3Distance(toVec3(nodes[0].position), toVec3(nodes[2].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[3], Vector3Distance(toVec3(nodes[1].position), toVec3(nodes[3].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[3], Vector3Distance(toVec3(nodes[2].position), toVec3(nodes[3].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[4], Vector3Distance(toVec3(nodes[0].position), toVec3(nodes[4].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[5], Vector3Distance(toVec3(nodes[1].position), toVec3(nodes[5].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[6], Vector3Distance(toVec3(nodes[2].position), toVec3(nodes[6].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[3], &nodes[7], Vector3Distance(toVec3(nodes[3].position), toVec3(nodes[7].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[4], &nodes[5], Vector3Distance(toVec3(nodes[4].position), toVec3(nodes[5].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[5], &nodes[7], Vector3Distance(toVec3(nodes[5].position), toVec3(nodes[7].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[6], &nodes[4], Vector3Distance(toVec3(nodes[6].position), toVec3(nodes[4].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[7], &nodes[6], Vector3Distance(toVec3(nodes[7].position), toVec3(nodes[6].position)), 100.0f, 0.1f, 1000.0f, false });
 
         // Define wheels
         wheels.push_back({ &nodes[4], 0.5f, 1000.0f, 0.8f, true });
@@ -150,18 +154,18 @@ void SoftBody::loadConfig(const std::string& filename) {
         nodes.push_back({ {-1.0f, 1.0f,  2.0f}, {-1.0f, 1.0f,  2.0f}, {0.0f, 0.0f, 0.0f}, 100.0f, 0.0f, 0.0f });
 
         // Define beams for the box
-        beams.push_back({ &nodes[0], &nodes[1], Vector3Distance(nodes[0].position, nodes[1].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[2], Vector3Distance(nodes[0].position, nodes[2].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[3], Vector3Distance(nodes[1].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[3], Vector3Distance(nodes[2].position, nodes[3].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[0], &nodes[4], Vector3Distance(nodes[0].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[1], &nodes[5], Vector3Distance(nodes[1].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[2], &nodes[6], Vector3Distance(nodes[2].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[3], &nodes[7], Vector3Distance(nodes[3].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[4], &nodes[5], Vector3Distance(nodes[4].position, nodes[5].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[5], &nodes[7], Vector3Distance(nodes[5].position, nodes[7].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[6], &nodes[4], Vector3Distance(nodes[6].position, nodes[4].position), 100.0f, 0.1f, 1000.0f, false });
-        beams.push_back({ &nodes[7], &nodes[6], Vector3Distance(nodes[7].position, nodes[6].position), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[1], Vector3Distance(toVec3(nodes[0].position), toVec3(nodes[1].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[2], Vector3Distance(toVec3(nodes[0].position), toVec3(nodes[2].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[3], Vector3Distance(toVec3(nodes[1].position), toVec3(nodes[3].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[3], Vector3Distance(toVec3(nodes[2].position), toVec3(nodes[3].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[0], &nodes[4], Vector3Distance(toVec3(nodes[0].position), toVec3(nodes[4].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[1], &nodes[5], Vector3Distance(toVec3(nodes[1].position), toVec3(nodes[5].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[2], &nodes[6], Vector3Distance(toVec3(nodes[2].position), toVec3(nodes[6].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[3], &nodes[7], Vector3Distance(toVec3(nodes[3].position), toVec3(nodes[7].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[4], &nodes[5], Vector3Distance(toVec3(nodes[4].position), toVec3(nodes[5].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[5], &nodes[7], Vector3Distance(toVec3(nodes[5].position), toVec3(nodes[7].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[6], &nodes[4], Vector3Distance(toVec3(nodes[6].position), toVec3(nodes[4].position)), 100.0f, 0.1f, 1000.0f, false });
+        beams.push_back({ &nodes[7], &nodes[6], Vector3Distance(toVec3(nodes[7].position), toVec3(nodes[6].position)), 100.0f, 0.1f, 1000.0f, false });
 
         // Define wheels
         wheels.push_back({ &nodes[4], 0.5f, 1000.0f, 0.8f, true });
