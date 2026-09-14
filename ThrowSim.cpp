@@ -2,10 +2,16 @@
 #include <fstream>
 #include <random>
 #include <cmath>
+#include <vector>
+#include <string>
 
 struct ThrowResult {
     float vx0, vy0, mass;
     float finalX, finalY;
+};
+
+struct TrajectoryPoint {
+    float x, y;
 };
 
 // Rolling hills instead of flat ground, so the resting height actually
@@ -14,7 +20,7 @@ static float terrainHeight(float x) {
     return 2.0f * std::sin(x * 0.05f) + 0.5f * std::sin(x * 0.13f);
 }
 
-static ThrowResult simulateThrow(float vx0, float vy0, float mass) {
+static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<TrajectoryPoint>* trajectory = nullptr) {
     const float dt = 0.01f;
     const float gravity = 9.81f;
     const float dragCoeff = 0.2f;
@@ -25,6 +31,10 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass) {
 
     float x = 0.0f, y = 1.0f;
     float vx = vx0, vy = vy0;
+
+    if (trajectory) {
+        trajectory->push_back({ x, y });
+    }
 
     for (int step = 0; step < maxSteps; ++step) {
         float ax = -dragCoeff * vx / mass;
@@ -45,6 +55,10 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass) {
             }
         }
 
+        if (trajectory) {
+            trajectory->push_back({ x, y });
+        }
+
         if (y == ground && std::fabs(vy) < restEps && std::fabs(vx) < restEps) {
             break;
         }
@@ -63,6 +77,21 @@ int main(int argc, char** argv) {
         float mass = std::stof(argv[3]);
         ThrowResult r = simulateThrow(vx0, vy0, mass);
         std::cout << r.finalX << "," << r.finalY << std::endl;
+        return 0;
+    }
+
+    // Trajectory mode: ./throw_sim --trajectory <vx0> <vy0> <mass> prints
+    // one "x,y" line per simulation step, for animating the flight path
+    // instead of just showing where it lands.
+    if (argc == 5 && std::string(argv[1]) == "--trajectory") {
+        float vx0 = std::stof(argv[2]);
+        float vy0 = std::stof(argv[3]);
+        float mass = std::stof(argv[4]);
+        std::vector<TrajectoryPoint> trajectory;
+        simulateThrow(vx0, vy0, mass, &trajectory);
+        for (const auto& p : trajectory) {
+            std::cout << p.x << "," << p.y << "\n";
+        }
         return 0;
     }
 
