@@ -34,7 +34,7 @@ criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Train, with early stopping on val loss
-epochs = 1000
+epochs = 5000
 patience = 50
 best_val_loss = float("inf")
 best_state = None

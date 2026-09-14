@@ -1,3 +1,4 @@
+import random
 import subprocess
 
 import torch
@@ -33,13 +34,15 @@ def predict(model, input_mean, input_std, vx0, vy0, mass):
 
 
 if __name__ == "__main__":
-    # A handful of throws the model has never seen (not from throw_results.csv)
+    # Fixed seed so this test set stays the same across runs, makes
+    # before/after comparisons between model versions fair. Same ranges
+    # ThrowSim.cpp uses to generate throw_results.csv, but these specific
+    # throws are never in that file.
+    random.seed(123)
+    num_test_throws = 30
     test_throws = [
-        (15.0, 25.0, 2.5),
-        (-10.0, 15.0, 1.0),
-        (8.0, 20.0, 4.5),
-        (-14.0, 8.0, 0.7),
-        (3.0, 22.0, 3.3),
+        (random.uniform(-15.0, 15.0), random.uniform(5.0, 25.0), random.uniform(0.5, 5.0))
+        for _ in range(num_test_throws)
     ]
 
     model, input_mean, input_std = load_model()
