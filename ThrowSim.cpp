@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 #include <string>
+#include "Terrain.h"
 
 struct ThrowResult {
     float vx0, vy0, mass;
@@ -13,12 +14,6 @@ struct ThrowResult {
 struct TrajectoryPoint {
     float x, y;
 };
-
-// Rolling hills instead of flat ground, so the resting height actually
-// depends on where the object lands, not always 0.
-static float terrainHeight(float x) {
-    return 2.0f * std::sin(x * 0.05f) + 0.5f * std::sin(x * 0.13f);
-}
 
 static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<TrajectoryPoint>* trajectory = nullptr) {
     const float dt = 0.01f;
