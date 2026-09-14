@@ -1,5 +1,4 @@
 import copy
-
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -34,7 +33,7 @@ criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Train, with early stopping on val loss
-epochs = 5000
+epochs = 50000
 patience = 50
 best_val_loss = float("inf")
 best_state = None
