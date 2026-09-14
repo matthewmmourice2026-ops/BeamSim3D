@@ -1,3 +1,5 @@
+import copy
+
 import pandas as pd
 import torch
 import torch.nn as nn
@@ -31,8 +33,13 @@ model = ImprovedNeuralNetwork()
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# Train
+# Train, with early stopping on val loss
 epochs = 1000
+patience = 50
+best_val_loss = float("inf")
+best_state = None
+epochs_no_improve = 0
+
 for epoch in range(epochs):
     model.train()
     optimizer.zero_grad()
@@ -41,19 +48,27 @@ for epoch in range(epochs):
     train_loss.backward()
     optimizer.step()
 
+    model.eval()
+    with torch.no_grad():
+        val_outputs = model(val_inputs)
+        val_loss = criterion(val_outputs, val_targets)
+
     if (epoch + 1) % 20 == 0:
-        model.eval()
-        with torch.no_grad():
-            val_outputs = model(val_inputs)
-            val_loss = criterion(val_outputs, val_targets)
         print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss.item():.4f}, Val Loss: {val_loss.item():.4f}")
 
-model.eval()
-with torch.no_grad():
-    final_val_outputs = model(val_inputs)
-    final_val_loss = criterion(final_val_outputs, val_targets)
+    if val_loss.item() < best_val_loss:
+        best_val_loss = val_loss.item()
+        best_state = copy.deepcopy(model.state_dict())
+        epochs_no_improve = 0
+    else:
+        epochs_no_improve += 1
+        if epochs_no_improve >= patience:
+            print(f"Early stopping at epoch {epoch + 1} (no val improvement for {patience} epochs)")
+            break
+
+model.load_state_dict(best_state)
 print(f"Final train loss: {train_loss.item():.4f}")
-print(f"Final val loss: {final_val_loss.item():.4f}")
+print(f"Best val loss: {best_val_loss:.4f}")
 
 torch.save({
     "model_state_dict": model.state_dict(),
