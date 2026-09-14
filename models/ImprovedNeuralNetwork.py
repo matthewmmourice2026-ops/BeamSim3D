@@ -8,20 +8,25 @@ class ImprovedNeuralNetwork(nn.Module):
         # Input layer to hidden layer
         self.fc1 = nn.Linear(3, 92)
         self.bn1 = nn.BatchNorm1d(92)  # Batch Normalization
-        self.dropout1 = nn.Dropout(0.001)  # Dropout to reduce overfitting
+        self.dropout1 = nn.Dropout(0.0001)  # Dropout to reduce overfitting
         
         # Hidden layer 1 to hidden layer 2
         self.fc2 = nn.Linear(92, 150)
         self.bn2 = nn.BatchNorm1d(150)
-        self.dropout2 = nn.Dropout(0.001)
+        self.dropout2 = nn.Dropout(0.0001)
 
         # Hidden layer 2 to hidden layer 3
         self.fc3 = nn.Linear(150, 200)
         self.bn3 = nn.BatchNorm1d(200)  # Batch Normalization
-        self.dropout3 = nn.Dropout(0.001)
+        self.dropout3 = nn.Dropout(0.0001)
+
+        # Hidden layer 3 to hidden layer 4
+        self.fc4 = nn.Linear(200, 270)
+        self.bn4 = nn.BatchNorm1d(270)
+        self.dropout4 = nn.Dropout(0.0001)
         
         # Hidden layer to output layer
-        self.fc4 = nn.Linear(200, 2)
+        self.fc5 = nn.Linear(270, 2)
 
     def forward(self, x):
         # Apply ReLU activation and batch normalization to the first layer
@@ -36,12 +41,20 @@ class ImprovedNeuralNetwork(nn.Module):
         x = self.bn2(x)
         x = self.dropout2(x)
         
-        # Output layer
+        # Apply ReLU activation and batch normalization to the third layer
         x = self.fc3(x)
         x = nn.functional.relu(x)
         x = self.bn3(x)
         x = self.dropout3(x)
+        
+        # Apply ReLU activation and batch normalization to the fourth layer
         x = self.fc4(x)
+        x = nn.functional.relu(x)
+        x = self.bn4(x)
+        x = self.dropout4(x)
+        
+        # Output layer
+        x = self.fc5(x)
         return x
 
 if __name__ == "__main__":
