@@ -1,5 +1,6 @@
 #include <raylib.h>
 #include <raymath.h>
+#include <rlgl.h>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 #include <vector>
 #include <limits>
 #include "Terrain.h"
+#include "ThrowRanges.h"
 
 // Throwing game combining the physics engine and the trained model.
 // Arrow keys adjust velocity, [ and ] adjust mass, SPACE throws.
@@ -14,10 +16,6 @@
 
 static const float SIM_DT = 0.01f;        // must match ThrowSim.cpp's dt
 static const float PLAYBACK_SPEED = 2.5f; // watch the flight faster than real time
-
-static const float VX_MIN = -15.0f, VX_MAX = 15.0f;
-static const float VY_MIN = 5.0f, VY_MAX = 25.0f;
-static const float MASS_MIN = 0.5f, MASS_MAX = 5.0f;
 
 static bool runCommand(const std::string& cmd, std::vector<Vector2>& outPoints) {
     FILE* pipe = popen(cmd.c_str(), "r");
@@ -73,19 +71,67 @@ static ThrowState runThrow(float vx0, float vy0, float mass) {
     return s;
 }
 
-// Terrain visual mesh, a ribbon following terrainHeight(x) that's flat
-// across z (matches the physics, which never varies with z either).
-static std::vector<Vector3> buildTerrainMesh() {
-    std::vector<Vector3> points;
+// Terrain as a proper lit Model instead of an unlit immediate-mode strip.
+// Vertex normals come from the analytic derivative of terrainHeight, not
+// guessed, so the lighting shader gets real slope information.
+static Model buildTerrainModel() {
     const float halfWidth = 15.0f;
     const float xMin = -110.0f, xMax = 110.0f, step = 2.0f;
 
-    for (float x = xMin; x <= xMax; x += step) {
+    std::vector<float> xs;
+    for (float x = xMin; x <= xMax; x += step) xs.push_back(x);
+    int sampleCount = (int)xs.size();
+    int vertexCount = sampleCount * 2;
+    int triangleCount = (sampleCount - 1) * 2;
+
+    Mesh mesh = { 0 };
+    mesh.vertexCount = vertexCount;
+    mesh.triangleCount = triangleCount;
+    mesh.vertices = (float*)MemAlloc(vertexCount * 3 * sizeof(float));
+    mesh.normals = (float*)MemAlloc(vertexCount * 3 * sizeof(float));
+    mesh.texcoords = (float*)MemAlloc(vertexCount * 2 * sizeof(float));
+    mesh.colors = (unsigned char*)MemAlloc(vertexCount * 4 * sizeof(unsigned char));
+    mesh.indices = (unsigned short*)MemAlloc(triangleCount * 3 * sizeof(unsigned short));
+
+    for (int i = 0; i < sampleCount; i++) {
+        float x = xs[i];
         float h = terrainHeight(x);
-        points.push_back({ x, h, -halfWidth });
-        points.push_back({ x, h, halfWidth });
+        float slope = terrainSlope(x);
+        Vector3 n = Vector3Normalize((Vector3){ -slope, 1.0f, 0.0f });
+
+        for (int side = 0; side < 2; side++) {
+            int v = i * 2 + side;
+            float z = side == 0 ? -halfWidth : halfWidth;
+
+            mesh.vertices[v * 3 + 0] = x;
+            mesh.vertices[v * 3 + 1] = h;
+            mesh.vertices[v * 3 + 2] = z;
+
+            mesh.normals[v * 3 + 0] = n.x;
+            mesh.normals[v * 3 + 1] = n.y;
+            mesh.normals[v * 3 + 2] = n.z;
+
+            mesh.texcoords[v * 2 + 0] = (float)i / (sampleCount - 1);
+            mesh.texcoords[v * 2 + 1] = (float)side;
+
+            mesh.colors[v * 4 + 0] = 255;
+            mesh.colors[v * 4 + 1] = 255;
+            mesh.colors[v * 4 + 2] = 255;
+            mesh.colors[v * 4 + 3] = 255;
+        }
     }
-    return points;
+
+    int idx = 0;
+    for (int i = 0; i < sampleCount - 1; i++) {
+        unsigned short bottomA = i * 2, topA = i * 2 + 1;
+        unsigned short bottomB = (i + 1) * 2, topB = (i + 1) * 2 + 1;
+
+        mesh.indices[idx++] = bottomA; mesh.indices[idx++] = topA; mesh.indices[idx++] = bottomB;
+        mesh.indices[idx++] = topA;    mesh.indices[idx++] = topB; mesh.indices[idx++] = bottomB;
+    }
+
+    UploadMesh(&mesh, false);
+    return LoadModelFromMesh(mesh);
 }
 
 int main() {
@@ -95,7 +141,32 @@ int main() {
     const int screenHeight = 600;
     InitWindow(screenWidth, screenHeight, "BeamSim3D - Throw Game");
 
-    std::vector<Vector3> terrainMesh = buildTerrainMesh();
+    // --- Lighting setup ---
+    Shader litShader = LoadShader("../Shaders/lighting.vs", "../Shaders/lighting.fs");
+    int locLightDir = GetShaderLocation(litShader, "lightDir");
+    int locLightColor = GetShaderLocation(litShader, "lightColor");
+    int locAmbientColor = GetShaderLocation(litShader, "ambientColor");
+    int locViewPos = GetShaderLocation(litShader, "viewPos");
+    int locShininess = GetShaderLocation(litShader, "shininess");
+
+    Vector3 lightDir = Vector3Normalize((Vector3){ -0.4f, -1.0f, -0.35f });
+    Vector3 lightColor = { 1.0f, 0.97f, 0.9f };
+    Vector3 ambientColor = { 0.28f, 0.32f, 0.36f };
+    float shininess = 24.0f;
+    SetShaderValue(litShader, locLightDir, &lightDir, SHADER_UNIFORM_VEC3);
+    SetShaderValue(litShader, locLightColor, &lightColor, SHADER_UNIFORM_VEC3);
+    SetShaderValue(litShader, locAmbientColor, &ambientColor, SHADER_UNIFORM_VEC3);
+    SetShaderValue(litShader, locShininess, &shininess, SHADER_UNIFORM_FLOAT);
+
+    Model terrainModel = buildTerrainModel();
+    terrainModel.materials[0].shader = litShader;
+    terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = (Color){ 60, 120, 55, 255 };
+
+    Model sphereModel = LoadModelFromMesh(GenMeshSphere(1.0f, 24, 24));
+    sphereModel.materials[0].shader = litShader;
+
+    Shader postShader = LoadShader(0, "../Shaders/postprocess.fs");
+    RenderTexture2D sceneTarget = LoadRenderTexture(screenWidth, screenHeight);
 
     float vx = 10.0f, vy = 15.0f, mass = 2.0f;
     ThrowState state = runThrow(vx, vy, mass);
@@ -194,12 +265,18 @@ int main() {
         camera.fovy = 45.0f;
         camera.projection = CAMERA_PERSPECTIVE;
 
-        BeginDrawing();
+        SetShaderValue(litShader, locViewPos, &camera.position, SHADER_UNIFORM_VEC3);
+
+        // --- Draw the scene into an offscreen texture ---
+        BeginTextureMode(sceneTarget);
         ClearBackground(SKYBLUE);
+
+        DrawRectangleGradientV(0, 0, screenWidth, screenHeight,
+                                (Color){ 90, 150, 230, 255 }, (Color){ 200, 225, 245, 255 });
 
         BeginMode3D(camera);
 
-        DrawTriangleStrip3D(terrainMesh.data(), (int)terrainMesh.size(), DARKGREEN);
+        DrawModel(terrainModel, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
 
         for (size_t i = 1; i < realTrail.size(); i++) {
             DrawLine3D(realTrail[i - 1], realTrail[i], MAROON);
@@ -208,11 +285,24 @@ int main() {
             DrawLine3D(predTrail[i - 1], predTrail[i], ORANGE);
         }
 
+        // Blob shadows under both balls, grounded at the terrain height
+        // beneath their current x position.
         if (state.haveReal) {
-            DrawSphere((Vector3){ realPos.x, realPos.y + 1.0f, 0.0f }, 1.0f, RED);
+            float groundY = terrainHeight(realPos.x);
+            DrawCylinder((Vector3){ realPos.x, groundY + 0.03f, 0.0f }, 1.1f, 1.1f, 0.03f, 16, (Color){ 0, 0, 0, 90 });
         }
         if (state.havePred) {
-            DrawSphere((Vector3){ predPos.x, predPos.y + 1.0f, 0.0f }, 1.0f, GOLD);
+            float groundY = terrainHeight(predPos.x);
+            DrawCylinder((Vector3){ predPos.x, groundY + 0.03f, 0.0f }, 1.1f, 1.1f, 0.03f, 16, (Color){ 0, 0, 0, 70 });
+        }
+
+        if (state.haveReal) {
+            sphereModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = RED;
+            DrawModel(sphereModel, (Vector3){ realPos.x, realPos.y + 1.0f, 0.0f }, 1.0f, WHITE);
+        }
+        if (state.havePred) {
+            sphereModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = GOLD;
+            DrawModel(sphereModel, (Vector3){ predPos.x, predPos.y + 1.0f, 0.0f }, 1.0f, WHITE);
         }
         if (animDone && state.haveReal && state.havePred) {
             DrawLine3D((Vector3){ state.realTrajectory.back().x, state.realTrajectory.back().y + 1.0f, 0.0f },
@@ -255,9 +345,24 @@ int main() {
 
         DrawText("SPACE to throw", 10, screenHeight - 30, 20, GRAY);
 
+        EndTextureMode();
+
+        // --- Composite with the post-process pass (vignette + contrast) ---
+        BeginDrawing();
+        ClearBackground(BLACK);
+        BeginShaderMode(postShader);
+        DrawTextureRec(sceneTarget.texture,
+                        (Rectangle){ 0, 0, (float)screenWidth, -(float)screenHeight },
+                        (Vector2){ 0, 0 }, WHITE);
+        EndShaderMode();
         EndDrawing();
     }
 
+    UnloadShader(litShader);
+    UnloadShader(postShader);
+    UnloadModel(terrainModel);
+    UnloadModel(sphereModel);
+    UnloadRenderTexture(sceneTarget);
     CloseWindow();
     return 0;
 }

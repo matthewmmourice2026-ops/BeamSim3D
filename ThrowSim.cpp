@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include "Terrain.h"
+#include "ThrowRanges.h"
 
 struct ThrowResult {
     float vx0, vy0, mass;
@@ -94,9 +95,9 @@ int main(int argc, char** argv) {
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> vxDist(-15.0f, 15.0f);
-    std::uniform_real_distribution<float> vyDist(5.0f, 25.0f);
-    std::uniform_real_distribution<float> massDist(0.5f, 5.0f);
+    std::uniform_real_distribution<float> vxDist(VX_MIN, VX_MAX);
+    std::uniform_real_distribution<float> vyDist(VY_MIN, VY_MAX);
+    std::uniform_real_distribution<float> massDist(MASS_MIN, MASS_MAX);
 
     std::ofstream out("throw_results.csv");
     out << "vx0,vy0,mass,final_x,final_y\n";

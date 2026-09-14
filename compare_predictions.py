@@ -40,8 +40,10 @@ if __name__ == "__main__":
     # throws are never in that file.
     random.seed(123)
     num_test_throws = 30
+    # Must match ThrowRanges.h (no shared include across C++/Python, so
+    # keep these in sync by hand if that file changes).
     test_throws = [
-        (random.uniform(-15.0, 15.0), random.uniform(5.0, 25.0), random.uniform(0.5, 5.0))
+        (random.uniform(-15.0, 65.0), random.uniform(5.0, 100.0), random.uniform(0.5, 20.0))
         for _ in range(num_test_throws)
     ]
 
