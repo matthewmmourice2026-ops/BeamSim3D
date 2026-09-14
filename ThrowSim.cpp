@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const int throwCount = 10000;
+    const int throwCount = 50000;
 
     std::random_device rd;
     std::mt19937 gen(rd());
