@@ -8,6 +8,12 @@ struct ThrowResult {
     float finalX, finalY;
 };
 
+// Rolling hills instead of flat ground, so the resting height actually
+// depends on where the object lands, not always 0.
+static float terrainHeight(float x) {
+    return 2.0f * std::sin(x * 0.05f) + 0.5f * std::sin(x * 0.13f);
+}
+
 static ThrowResult simulateThrow(float vx0, float vy0, float mass) {
     const float dt = 0.01f;
     const float gravity = 9.81f;
@@ -29,8 +35,9 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass) {
         x += vx * dt;
         y += vy * dt;
 
-        if (y <= 0.0f) {
-            y = 0.0f;
+        float ground = terrainHeight(x);
+        if (y <= ground) {
+            y = ground;
             vy = -vy * restitution;
             vx *= groundFriction;
             if (std::fabs(vy) < restEps) {
@@ -38,7 +45,7 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass) {
             }
         }
 
-        if (y == 0.0f && std::fabs(vy) < restEps && std::fabs(vx) < restEps) {
+        if (y == ground && std::fabs(vy) < restEps && std::fabs(vx) < restEps) {
             break;
         }
     }
