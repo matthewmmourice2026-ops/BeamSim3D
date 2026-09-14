@@ -6,17 +6,17 @@ class ImprovedNeuralNetwork(nn.Module):
         super(ImprovedNeuralNetwork, self).__init__()
         
         # Input layer to hidden layer
-        self.fc1 = nn.Linear(3, 16)
-        self.bn1 = nn.BatchNorm1d(16)  # Batch Normalization
-        self.dropout1 = nn.Dropout(0.2)  # Dropout to reduce overfitting
+        self.fc1 = nn.Linear(3, 92)
+        self.bn1 = nn.BatchNorm1d(92)  # Batch Normalization
+        self.dropout1 = nn.Dropout(0.01)  # Dropout to reduce overfitting
         
         # Hidden layer to hidden layer
-        self.fc2 = nn.Linear(16, 32)
-        self.bn2 = nn.BatchNorm1d(32)
-        self.dropout2 = nn.Dropout(0.3)
+        self.fc2 = nn.Linear(92, 150)
+        self.bn2 = nn.BatchNorm1d(150)
+        self.dropout2 = nn.Dropout(0.01)
         
         # Hidden layer to output layer
-        self.fc3 = nn.Linear(32, 2)
+        self.fc3 = nn.Linear(150, 2)
 
     def forward(self, x):
         # Apply ReLU activation and batch normalization to the first layer

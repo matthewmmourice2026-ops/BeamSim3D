@@ -10,22 +10,41 @@ df = pd.read_csv("build/throw_results.csv")
 inputs = torch.tensor(df[["vx0", "vy0", "mass"]].values, dtype=torch.float32)
 targets = torch.tensor(df[["final_x", "final_y"]].values, dtype=torch.float32)
 
+# Train/val split (80/20), shuffled
+torch.manual_seed(42)
+n = inputs.shape[0]
+perm = torch.randperm(n)
+split = int(n * 0.8)
+train_idx, val_idx = perm[:split], perm[split:]
+
+train_inputs, train_targets = inputs[train_idx], targets[train_idx]
+val_inputs, val_targets = inputs[val_idx], targets[val_idx]
+
 # Instantiate the model, loss function, and optimizer
 model = ImprovedNeuralNetwork()
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Train
-epochs = 200
-model.train()
+epochs = 1000
 for epoch in range(epochs):
+    model.train()
     optimizer.zero_grad()
-    outputs = model(inputs)
-    loss = criterion(outputs, targets)
-    loss.backward()
+    outputs = model(train_inputs)
+    train_loss = criterion(outputs, train_targets)
+    train_loss.backward()
     optimizer.step()
 
     if (epoch + 1) % 20 == 0:
-        print(f"Epoch {epoch + 1}/{epochs}, Loss: {loss.item():.4f}")
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(val_inputs)
+            val_loss = criterion(val_outputs, val_targets)
+        print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss.item():.4f}, Val Loss: {val_loss.item():.4f}")
 
-print(f"Final loss: {loss.item():.4f}")
+model.eval()
+with torch.no_grad():
+    final_val_outputs = model(val_inputs)
+    final_val_loss = criterion(final_val_outputs, val_targets)
+print(f"Final train loss: {train_loss.item():.4f}")
+print(f"Final val loss: {final_val_loss.item():.4f}")
