@@ -1,6 +1,0 @@
-63│    std::vector<Node3D> nodes;
-64│    std::vector<Beam3D> beams;
-65│    std::vector<Wheel> wheels;
-66│    std::vector<Triangle> triangles;
-82│    void loadConfig(const std::string& filename);
-85│    bool loadHeightmap(const std::string& filename);
