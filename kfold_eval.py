@@ -15,7 +15,7 @@ inputs = torch.tensor(df[["vx0", "vy0", "mass"]].values, dtype=torch.float32)
 targets = torch.tensor(df[["final_x", "final_y"]].values, dtype=torch.float32)
 
 k = 5
-epochs = 1000
+epochs = 5000
 patience = 50
 
 torch.manual_seed(42)
