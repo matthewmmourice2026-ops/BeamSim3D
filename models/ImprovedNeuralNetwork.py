@@ -7,27 +7,27 @@ class ImprovedNeuralNetwork(nn.Module):
         super(ImprovedNeuralNetwork, self).__init__()
         
         # Input layer to hidden layer
-        self.fc1 = nn.Linear(3, 92)
-        self.bn1 = nn.BatchNorm1d(92)  # Batch Normalization
+        self.fc1 = nn.Linear(3, 250)
+        self.bn1 = nn.BatchNorm1d(250)  # Batch Normalization
         self.dropout1 = nn.Dropout(0.0001)  # Dropout to reduce overfitting
         
         # Hidden layer 1 to hidden layer 2
-        self.fc2 = nn.Linear(92, 140)
-        self.bn2 = nn.BatchNorm1d(140)
+        self.fc2 = nn.Linear(250, 250)
+        self.bn2 = nn.BatchNorm1d(250)
         self.dropout2 = nn.Dropout(0.00001)
 
         # Hidden layer 2 to hidden layer 3
-        self.fc3 = nn.Linear(140, 200)
-        self.bn3 = nn.BatchNorm1d(200)  # Batch Normalization
+        self.fc3 = nn.Linear(250, 250)
+        self.bn3 = nn.BatchNorm1d(250)  # Batch Normalization
         self.dropout3 = nn.Dropout(0.00001)
 
         # Hidden layer 3 to hidden layer 4
-        self.fc4 = nn.Linear(200, 290)
-        self.bn4 = nn.BatchNorm1d(290)
+        self.fc4 = nn.Linear(250, 300)
+        self.bn4 = nn.BatchNorm1d(300)
         self.dropout4 = nn.Dropout(0.00001)
 
         # Hidden layer 4 to hidden layer 5
-        self.fc5 = nn.Linear(290, 450)
+        self.fc5 = nn.Linear(300, 450)
         self.bn5 = nn.BatchNorm1d(450)
         self.dropout5 = nn.Dropout(0.00001)
 

@@ -32,6 +32,12 @@ model = ImprovedNeuralNetwork()
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+# Drops LR by 10x when val loss stalls, so late-stage training can settle
+# instead of oscillating around a coarse fixed step size. Scheduler
+# patience is shorter than early-stopping patience so it gets a chance
+# to act before training just stops.
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.69, patience=35)
+
 # Train, with early stopping on val loss
 epochs = 50000
 patience = 50
@@ -51,6 +57,12 @@ for epoch in range(epochs):
     with torch.no_grad():
         val_outputs = model(val_inputs)
         val_loss = criterion(val_outputs, val_targets)
+
+    prev_lr = optimizer.param_groups[0]["lr"]
+    scheduler.step(val_loss.item())
+    new_lr = optimizer.param_groups[0]["lr"]
+    if new_lr != prev_lr:
+        print(f"Epoch {epoch + 1}: learning rate reduced {prev_lr:.6f} -> {new_lr:.6f}")
 
     if (epoch + 1) % 20 == 0:
         print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss.item():.4f}, Val Loss: {val_loss.item():.4f}")
