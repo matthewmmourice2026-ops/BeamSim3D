@@ -31,8 +31,13 @@ class ImprovedNeuralNetwork(nn.Module):
         self.bn5 = nn.BatchNorm1d(450)
         self.dropout5 = nn.Dropout(0.00001)
 
-        # Hidden layer 5 to output layer
-        self.fc6 = nn.Linear(450, 3)
+        # Hidden layer 5 to hidden layer 6
+        self.fc6 = nn.Linear(450, 600)
+        self.bn6 = nn.BatchNorm1d(600)
+        self.dropout6 = nn.Dropout(0.00001)
+
+        # Hidden layer 6 to output layer
+        self.fc7 = nn.Linear(600, 3)
 
     def forward(self, x):
         # Apply ReLU activation and batch normalization to the first layer
@@ -64,9 +69,15 @@ class ImprovedNeuralNetwork(nn.Module):
         x = nn.functional.relu(x)
         x = self.bn5(x)
         x = self.dropout5(x)
+
+        # Apply ReLU activation and batch normalization to the sixth layer
+        x = self.fc6(x)
+        x = nn.functional.relu(x)
+        x = self.bn6(x)
+        x = self.dropout6(x)
         
         # Output layer
-        x = self.fc6(x)
+        x = self.fc7(x)
         return x
 
 if __name__ == "__main__":
