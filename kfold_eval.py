@@ -12,7 +12,7 @@ from models.ImprovedNeuralNetwork import ImprovedNeuralNetwork
 
 df = pd.read_csv("build/throw_results.csv")
 inputs = torch.tensor(df[["vx0", "vy0", "mass"]].values, dtype=torch.float32)
-targets = torch.tensor(df[["final_x", "final_y"]].values, dtype=torch.float32)
+targets = torch.tensor(df[["final_x", "final_y", "maxHeight"]].values, dtype=torch.float32)
 
 k = 5
 epochs = 5000
