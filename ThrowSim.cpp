@@ -53,7 +53,19 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass) {
     return { vx0, vy0, mass, x, y };
 }
 
-int main() {
+int main(int argc, char** argv) {
+    // Single-throw mode: ./throw_sim <vx0> <vy0> <mass> prints "final_x,final_y"
+    // and exits. Lets other tools (e.g. compare_predictions.py) ask the real
+    // physics engine for ground truth instead of re-implementing it elsewhere.
+    if (argc == 4) {
+        float vx0 = std::stof(argv[1]);
+        float vy0 = std::stof(argv[2]);
+        float mass = std::stof(argv[3]);
+        ThrowResult r = simulateThrow(vx0, vy0, mass);
+        std::cout << r.finalX << "," << r.finalY << std::endl;
+        return 0;
+    }
+
     const int throwCount = 1000;
 
     std::random_device rd;
