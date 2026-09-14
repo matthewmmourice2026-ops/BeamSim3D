@@ -33,7 +33,6 @@ class ImprovedNeuralNetwork(nn.Module):
         
         # Output layer
         x = self.fc3(x)
-        
         return x
 
 if __name__ == "__main__":
