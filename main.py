@@ -20,6 +20,12 @@ train_idx, val_idx = perm[:split], perm[split:]
 train_inputs, train_targets = inputs[train_idx], targets[train_idx]
 val_inputs, val_targets = inputs[val_idx], targets[val_idx]
 
+# Normalize inputs using train-set stats only (avoid leaking val-set info)
+input_mean = train_inputs.mean(dim=0)
+input_std = train_inputs.std(dim=0)
+train_inputs = (train_inputs - input_mean) / input_std
+val_inputs = (val_inputs - input_mean) / input_std
+
 # Instantiate the model, loss function, and optimizer
 model = ImprovedNeuralNetwork()
 criterion = nn.MSELoss()
@@ -49,5 +55,9 @@ with torch.no_grad():
 print(f"Final train loss: {train_loss.item():.4f}")
 print(f"Final val loss: {final_val_loss.item():.4f}")
 
-torch.save(model.state_dict(), "models/ImprovedNeuralNetwork.pth")
-print("Saved weights to models/ImprovedNeuralNetwork.pth")
+torch.save({
+    "model_state_dict": model.state_dict(),
+    "input_mean": input_mean,
+    "input_std": input_std,
+}, "models/ImprovedNeuralNetwork.pth")
+print("Saved weights + input normalization stats to models/ImprovedNeuralNetwork.pth")
