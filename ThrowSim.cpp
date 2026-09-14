@@ -10,6 +10,7 @@
 struct ThrowResult {
     float vx0, vy0, mass;
     float finalX, finalY;
+    float maxHeight;
 };
 
 struct TrajectoryPoint {
@@ -24,7 +25,7 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
     const float groundFriction = 0.7f;
     const float restEps = 0.05f;
     const int maxSteps = 5000;
-
+    float maxHeight = 0.0f;  // Starting height at x=0
     float x = 0.0f, y = 1.0f;
     float vx = vx0, vy = vy0;
 
@@ -51,6 +52,10 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
             }
         }
 
+        if (y > maxHeight) {
+            maxHeight = y;
+        }
+
         if (trajectory) {
             trajectory->push_back({ x, y });
         }
@@ -60,7 +65,7 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
         }
     }
 
-    return { vx0, vy0, mass, x, y };
+    return { vx0, vy0, mass, x, y, maxHeight };
 }
 
 int main(int argc, char** argv) {
@@ -72,7 +77,7 @@ int main(int argc, char** argv) {
         float vy0 = std::stof(argv[2]);
         float mass = std::stof(argv[3]);
         ThrowResult r = simulateThrow(vx0, vy0, mass);
-        std::cout << r.finalX << "," << r.finalY << std::endl;
+        std::cout << r.finalX << "," << r.finalY << "," << r.maxHeight << std::endl;
         return 0;
     }
 
@@ -98,19 +103,19 @@ int main(int argc, char** argv) {
     std::uniform_real_distribution<float> vxDist(VX_MIN, VX_MAX);
     std::uniform_real_distribution<float> vyDist(VY_MIN, VY_MAX);
     std::uniform_real_distribution<float> massDist(MASS_MIN, MASS_MAX);
+    std::uniform_real_distribution<float> heightDist(0.0f, 0.0f); // For starting height at x=0   
 
     std::ofstream out("throw_results.csv");
-    out << "vx0,vy0,mass,final_x,final_y\n";
+    out << "vx0,vy0,mass,final_x,final_y,maxHeight\n";
 
     for (int i = 0; i < throwCount; ++i) {
         float vx0 = vxDist(gen);
         float vy0 = vyDist(gen);
         float mass = massDist(gen);
-
         ThrowResult r = simulateThrow(vx0, vy0, mass);
 
         out << r.vx0 << "," << r.vy0 << "," << r.mass << ","
-            << r.finalX << "," << r.finalY << "\n";
+            << r.finalX << "," << r.finalY << "," << r.maxHeight << "\n";
     }
 
     out.close();

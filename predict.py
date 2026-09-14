@@ -14,7 +14,13 @@ if __name__ == "__main__":
     vx0, vy0, mass = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3])
 
     repo_root = os.path.dirname(os.path.abspath(__file__))
-    checkpoint = torch.load(os.path.join(repo_root, "models", "ImprovedNeuralNetwork.pth"))
+    checkpoint_path = os.path.join(repo_root, "models", "ImprovedNeuralNetwork.pth")
+    
+    try:
+        checkpoint = torch.load(checkpoint_path)
+    except FileNotFoundError:
+        print(f"Checkpoint file not found: {checkpoint_path}", file=sys.stderr)
+        sys.exit(1)
 
     model = ImprovedNeuralNetwork()
     model.load_state_dict(checkpoint["model_state_dict"])
@@ -23,6 +29,8 @@ if __name__ == "__main__":
     x = torch.tensor([[vx0, vy0, mass]], dtype=torch.float32)
     x = (x - checkpoint["input_mean"]) / checkpoint["input_std"]
     with torch.no_grad():
-        y = model(x)
+        predictions = model(x)
 
-    print(f"{y[0, 0].item()},{y[0, 1].item()}")
+    landing_x, landing_y, max_height = predictions[0, 0].item(), predictions[0, 1].item(), predictions[0, 2].item()
+
+    print(f"{landing_x},{landing_y},{max_height}")

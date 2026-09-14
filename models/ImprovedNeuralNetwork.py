@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.optim as optim
 
 class ImprovedNeuralNetwork(nn.Module):
     def __init__(self):
@@ -11,22 +12,27 @@ class ImprovedNeuralNetwork(nn.Module):
         self.dropout1 = nn.Dropout(0.0001)  # Dropout to reduce overfitting
         
         # Hidden layer 1 to hidden layer 2
-        self.fc2 = nn.Linear(92, 150)
-        self.bn2 = nn.BatchNorm1d(150)
-        self.dropout2 = nn.Dropout(0.0001)
+        self.fc2 = nn.Linear(92, 140)
+        self.bn2 = nn.BatchNorm1d(140)
+        self.dropout2 = nn.Dropout(0.00001)
 
         # Hidden layer 2 to hidden layer 3
-        self.fc3 = nn.Linear(150, 200)
+        self.fc3 = nn.Linear(140, 200)
         self.bn3 = nn.BatchNorm1d(200)  # Batch Normalization
-        self.dropout3 = nn.Dropout(0.0001)
+        self.dropout3 = nn.Dropout(0.00001)
 
         # Hidden layer 3 to hidden layer 4
-        self.fc4 = nn.Linear(200, 270)
-        self.bn4 = nn.BatchNorm1d(270)
-        self.dropout4 = nn.Dropout(0.0001)
-        
-        # Hidden layer to output layer
-        self.fc5 = nn.Linear(270, 2)
+        self.fc4 = nn.Linear(200, 290)
+        self.bn4 = nn.BatchNorm1d(290)
+        self.dropout4 = nn.Dropout(0.00001)
+
+        # Hidden layer 4 to hidden layer 5
+        self.fc5 = nn.Linear(290, 450)
+        self.bn5 = nn.BatchNorm1d(450)
+        self.dropout5 = nn.Dropout(0.00001)
+
+        # Hidden layer 5 to output layer
+        self.fc6 = nn.Linear(450, 3)
 
     def forward(self, x):
         # Apply ReLU activation and batch normalization to the first layer
@@ -52,9 +58,15 @@ class ImprovedNeuralNetwork(nn.Module):
         x = nn.functional.relu(x)
         x = self.bn4(x)
         x = self.dropout4(x)
+
+        # Apply ReLU activation and batch normalization to the fifth layer
+        x = self.fc5(x)
+        x = nn.functional.relu(x)
+        x = self.bn5(x)
+        x = self.dropout5(x)
         
         # Output layer
-        x = self.fc5(x)
+        x = self.fc6(x)
         return x
 
 if __name__ == "__main__":
