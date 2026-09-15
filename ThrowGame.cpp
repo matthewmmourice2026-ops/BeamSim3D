@@ -52,6 +52,18 @@ static float randRangeF(float lo, float hi) {
     return lo + (hi - lo) * (float)GetRandomValue(0, 10000) / 10000.0f;
 }
 
+// Cheap legibility boost without a custom font file: a dark offset copy
+// behind the real text, like a soft drop shadow. Keeps HUD text readable
+// over a busy 3D scene (sky, terrain, particles) instead of just flat text.
+static void DrawTextOutlined(const char* text, int x, int y, int fontSize, Color color) {
+    DrawText(text, x + 2, y + 2, fontSize, (Color){ 0, 0, 0, 170 });
+    DrawText(text, x, y, fontSize, color);
+}
+
+static void DrawPanel(int x, int y, int w, int h) {
+    DrawRectangle(x, y, w, h, (Color){ 15, 15, 20, 110 });
+}
+
 struct ThrowState {
     float vx0, vy0, mass;
     std::vector<Vector2> realTrajectory;
@@ -208,9 +220,16 @@ static Model buildTerrainModel() {
 int main() {
     SetRandomSeed((unsigned int)GetTime());
 
+    // The scene always renders internally at this fixed resolution, then
+    // gets scaled (letterboxed) to fit whatever the real window size is.
+    // That way HUD layout code never has to think about window size - only
+    // the final composite step does.
     const int screenWidth = 1000;
     const int screenHeight = 600;
+
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(screenWidth, screenHeight, "BeamSim3D - Throw Game");
+    SetWindowMinSize(480, 300);
 
     // --- Lighting setup ---
     Shader litShader = LoadShader("../Shaders/lighting.vs", "../Shaders/lighting.fs");
@@ -269,6 +288,8 @@ int main() {
         bool animDone = animT >= 1.0f;
         bool flying = !animDone;
         float dt = GetFrameTime();
+
+        if (IsKeyPressed(KEY_F11)) ToggleFullscreen();
 
         // Adjust throw parameters and guess only between throws
         if (animDone) {
@@ -451,54 +472,83 @@ int main() {
 
         EndMode3D();
 
+        // --- Top HUD panel: throw params, real/AI landing, headline result ---
+        int panelW = 430;
+        int panelH = (animDone && state.haveReal && state.havePred) ? 158 : 128;
+        DrawPanel(8, 8, panelW, panelH);
+
+        int lineY = 16;
         if (animDone) {
-            DrawText(TextFormat("Throw: vx=%.1f vy=%.1f mass=%.1f  (arrows/[ ] adjust, A/D move guess)", vx, vy, mass), 10, 10, 20, BLACK);
+            DrawTextOutlined(TextFormat("vx=%.1f  vy=%.1f  mass=%.1f", vx, vy, mass), 18, lineY, 20, RAYWHITE);
         } else {
-            DrawText(TextFormat("In flight: vx=%.1f vy=%.1f mass=%.1f", state.vx0, state.vy0, state.mass), 10, 10, 20, BLACK);
+            DrawTextOutlined(TextFormat("In flight: vx=%.1f  vy=%.1f  mass=%.1f", state.vx0, state.vy0, state.mass), 18, lineY, 20, RAYWHITE);
         }
+        lineY += 26;
 
         if (state.haveReal) {
-            DrawText(TextFormat("Real landing (red):  x=%.2f y=%.2f", state.realTrajectory.back().x, state.realTrajectory.back().y), 10, 35, 20, MAROON);
+            DrawTextOutlined(TextFormat("Real landing:  x=%.2f  y=%.2f", state.realTrajectory.back().x, state.realTrajectory.back().y), 18, lineY, 17, (Color){ 255, 120, 120, 255 });
         } else {
-            DrawText("Real landing: throw_sim call failed (run this from build/)", 10, 35, 20, MAROON);
+            DrawTextOutlined("Real landing: throw_sim call failed (run this from build/)", 18, lineY, 17, (Color){ 255, 120, 120, 255 });
         }
+        lineY += 22;
+
         if (state.havePred) {
-            DrawText(TextFormat("AI predicted (gold): x=%.2f y=%.2f", state.predX, state.predY), 10, 60, 20, ORANGE);
+            DrawTextOutlined(TextFormat("AI predicted:  x=%.2f  y=%.2f", state.predX, state.predY), 18, lineY, 17, GOLD);
         } else {
-            DrawText("AI prediction: predict.py call failed (need venv with torch active)", 10, 60, 20, ORANGE);
+            DrawTextOutlined("AI prediction: predict.py call failed (need venv with torch active)", 18, lineY, 17, GOLD);
         }
+        lineY += 30;
 
         if (animDone && state.haveReal && state.havePred) {
             float dx = state.realTrajectory.back().x - state.predX;
             float dy = state.realTrajectory.back().y - state.predY;
             float aiError = sqrtf(dx * dx + dy * dy);
-            DrawText(TextFormat("AI error: %.3f units   Your guess error: %.3f   %s   +%d target pts",
-                                 aiError, lastPlayerError, lastPlayerWon ? "YOU WIN" : "AI WINS", lastRoundScore),
-                      10, 90, 20, lastPlayerWon ? DARKGREEN : DARKPURPLE);
+            Color resultColor = lastPlayerWon ? (Color){ 110, 230, 140, 255 } : (Color){ 200, 140, 255, 255 };
+            DrawTextOutlined(lastPlayerWon ? "YOU WIN THIS ROUND" : "AI WINS THIS ROUND", 18, lineY, 22, resultColor);
+            lineY += 26;
+            DrawTextOutlined(TextFormat("AI error %.3f   Your error %.3f   +%d target pts",
+                                         aiError, lastPlayerError, lastRoundScore),
+                              18, lineY, 16, (Color){ 220, 220, 220, 255 });
         } else if (!animDone) {
-            DrawText("In flight...", 10, 90, 20, GRAY);
+            DrawTextOutlined("In flight...", 18, lineY, 18, (Color){ 210, 210, 210, 255 });
         }
 
+        // --- Secondary stats panel, smaller/quieter than the headline ---
         if (stats.totalThrows > 0) {
-            DrawText(TextFormat("Throws: %d   AI avg err: %.3f   Best: %.3f   Streak: %d (best %d)",
-                                 stats.totalThrows, stats.aiErrorSum / stats.totalThrows, stats.bestError, stats.streak, stats.bestStreak),
-                      10, 120, 18, DARKGRAY);
-            DrawText(TextFormat("You vs AI: %d - %d   Target score: %d",
-                                 stats.playerWins, stats.aiWins, stats.targetScore),
-                      10, 145, 18, DARKGRAY);
+            DrawPanel(8, panelH + 14, panelW, 52);
+            DrawTextOutlined(TextFormat("Throws %d   AI avg %.3f   Best %.3f   Streak %d (best %d)",
+                                         stats.totalThrows, stats.aiErrorSum / stats.totalThrows, stats.bestError, stats.streak, stats.bestStreak),
+                              18, panelH + 20, 15, (Color){ 190, 190, 190, 255 });
+            DrawTextOutlined(TextFormat("You vs AI: %d - %d   Target score: %d",
+                                         stats.playerWins, stats.aiWins, stats.targetScore),
+                              18, panelH + 40, 15, (Color){ 190, 190, 190, 255 });
         }
 
-        DrawText("SPACE throw | R replay | blue disc = your guess | magenta flag = target", 10, screenHeight - 30, 18, GRAY);
+        // --- Bottom control hint bar, full width ---
+        DrawPanel(0, screenHeight - 30, screenWidth, 30);
+        DrawTextOutlined("SPACE throw | R replay | F11 fullscreen | A/D your guess | blue disc = guess | magenta flag = target",
+                          14, screenHeight - 24, 15, (Color){ 220, 220, 220, 255 });
 
         EndTextureMode();
 
         // --- Composite with the post-process pass (vignette + contrast) ---
+        // Scaled + letterboxed to fit the actual window/fullscreen size,
+        // keeping the fixed internal resolution's aspect ratio intact.
+        int winW = GetScreenWidth();
+        int winH = GetScreenHeight();
+        float fitScale = fminf((float)winW / screenWidth, (float)winH / screenHeight);
+        float destW = screenWidth * fitScale;
+        float destH = screenHeight * fitScale;
+        float destX = (winW - destW) * 0.5f;
+        float destY = (winH - destH) * 0.5f;
+
         BeginDrawing();
         ClearBackground(BLACK);
         BeginShaderMode(postShader);
-        DrawTextureRec(sceneTarget.texture,
+        DrawTexturePro(sceneTarget.texture,
                         (Rectangle){ 0, 0, (float)screenWidth, -(float)screenHeight },
-                        (Vector2){ 0, 0 }, WHITE);
+                        (Rectangle){ destX, destY, destW, destH },
+                        (Vector2){ 0, 0 }, 0.0f, WHITE);
         EndShaderMode();
         EndDrawing();
     }
