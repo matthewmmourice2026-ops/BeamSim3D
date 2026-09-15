@@ -65,7 +65,7 @@ static void DrawPanel(int x, int y, int w, int h) {
 }
 
 struct ThrowState {
-    float vx0, vy0, mass;
+    float vx0, vy0, mass, height0, windAccel;
     std::vector<Vector2> realTrajectory;
     bool haveReal;
     float predX, predY;
@@ -73,19 +73,21 @@ struct ThrowState {
     double startTime;
 };
 
-static ThrowState runThrow(float vx0, float vy0, float mass) {
+// height0 and windAccel are environmental, not player-controlled - randomized
+// fresh each throw, same as the target zone, rather than adding more keys.
+static ThrowState runThrow(float vx0, float vy0, float mass, float height0, float windAccel) {
     ThrowState s;
     s.vx0 = vx0;
     s.vy0 = vy0;
     s.mass = mass;
+    s.height0 = height0;
+    s.windAccel = windAccel;
 
-    s.haveReal = runCommand(
-        "./throw_sim --trajectory " + std::to_string(vx0) + " " + std::to_string(vy0) + " " + std::to_string(mass),
-        s.realTrajectory);
+    std::string argsStr = std::to_string(vx0) + " " + std::to_string(vy0) + " " + std::to_string(mass) + " " +
+                           std::to_string(height0) + " " + std::to_string(windAccel);
 
-    s.havePred = runFinal(
-        "python3 ../predict.py " + std::to_string(vx0) + " " + std::to_string(vy0) + " " + std::to_string(mass),
-        s.predX, s.predY);
+    s.haveReal = runCommand("./throw_sim --trajectory " + argsStr, s.realTrajectory);
+    s.havePred = runFinal("python3 ../predict.py " + argsStr, s.predX, s.predY);
 
     s.startTime = GetTime();
     return s;
@@ -261,7 +263,7 @@ int main() {
     float vx = 10.0f, vy = 15.0f, mass = 2.0f;
     float guessX = 0.0f;
     float targetX = randRangeF(-50.0f, 250.0f);
-    ThrowState state = runThrow(vx, vy, mass);
+    ThrowState state = runThrow(vx, vy, mass, randRangeF(HEIGHT_MIN, HEIGHT_MAX), randRangeF(WIND_MIN, WIND_MAX));
     bool scored = false;
     bool wasFlying = true;
 
@@ -303,7 +305,7 @@ int main() {
             if (IsKeyDown(KEY_A)) guessX -= 30.0f * dt;
 
             if (IsKeyPressed(KEY_SPACE)) {
-                state = runThrow(vx, vy, mass);
+                state = runThrow(vx, vy, mass, randRangeF(HEIGHT_MIN, HEIGHT_MAX), randRangeF(WIND_MIN, WIND_MAX));
                 targetX = randRangeF(-50.0f, 250.0f);
                 scored = false;
                 realTrail.clear();
@@ -330,7 +332,7 @@ int main() {
             // land alongside the real ball.
             float arcHeight = 8.0f;
             predPos.x = Lerp(0.0f, state.predX, animT);
-            predPos.y = Lerp(1.0f, state.predY, animT) + arcHeight * sinf(3.14159265f * animT);
+            predPos.y = Lerp(state.height0, state.predY, animT) + arcHeight * sinf(3.14159265f * animT);
         }
 
         if (flying) {
@@ -474,7 +476,7 @@ int main() {
 
         // --- Top HUD panel: throw params, real/AI landing, headline result ---
         int panelW = 430;
-        int panelH = (animDone && state.haveReal && state.havePred) ? 158 : 128;
+        int panelH = (animDone && state.haveReal && state.havePred) ? 178 : 148;
         DrawPanel(8, 8, panelW, panelH);
 
         int lineY = 16;
@@ -483,7 +485,13 @@ int main() {
         } else {
             DrawTextOutlined(TextFormat("In flight: vx=%.1f  vy=%.1f  mass=%.1f", state.vx0, state.vy0, state.mass), 18, lineY, 20, RAYWHITE);
         }
-        lineY += 26;
+        lineY += 22;
+
+        // height0/windAccel are environmental (randomized per throw, not
+        // player-adjustable), shown for the throw that's currently in
+        // flight or just landed - not the next one, which hasn't rolled yet.
+        DrawTextOutlined(TextFormat("Launch height %.1f   Wind %+.1f", state.height0, state.windAccel), 18, lineY, 15, (Color){ 180, 210, 230, 255 });
+        lineY += 20;
 
         if (state.haveReal) {
             DrawTextOutlined(TextFormat("Real landing:  x=%.2f  y=%.2f", state.realTrajectory.back().x, state.realTrajectory.back().y), 18, lineY, 17, (Color){ 255, 120, 120, 255 });

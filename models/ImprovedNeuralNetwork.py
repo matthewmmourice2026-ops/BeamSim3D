@@ -6,9 +6,9 @@ class ImprovedNeuralNetwork(nn.Module):
     def __init__(self):
         super(ImprovedNeuralNetwork, self).__init__()
         
-        # Input layer to hidden layer (3 raw inputs + 1 engineered feature,
-        # see features.py)
-        self.fc1 = nn.Linear(4, 250)
+        # Input layer to hidden layer (5 raw inputs: vx0, vy0, mass,
+        # height0, windAccel + 1 engineered feature, see features.py)
+        self.fc1 = nn.Linear(6, 250)
         self.bn1 = nn.BatchNorm1d(250)  # Batch Normalization
         self.dropout1 = nn.Dropout(0.0000000001)  # Dropout to reduce overfitting
         
@@ -116,7 +116,7 @@ if __name__ == "__main__":
 
     # Dummy input to see the output
     net.eval()
-    input_tensor = add_engineered_features(torch.tensor([[1.0, 2.0, 3.0]]))
+    input_tensor = add_engineered_features(torch.tensor([[1.0, 2.0, 3.0, 1.0, 0.0]]))
     with torch.no_grad():
         output = net(input_tensor)
     print(output)

@@ -7,11 +7,13 @@ from features import add_engineered_features
 from models.ImprovedNeuralNetwork import ImprovedNeuralNetwork
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("usage: predict.py <vx0> <vy0> <mass>", file=sys.stderr)
+    if len(sys.argv) != 6:
+        print("usage: predict.py <vx0> <vy0> <mass> <height0> <windAccel>", file=sys.stderr)
         sys.exit(1)
 
-    vx0, vy0, mass = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3])
+    vx0, vy0, mass, height0, windAccel = (
+        float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4]), float(sys.argv[5]),
+    )
 
     repo_root = os.path.dirname(os.path.abspath(__file__))
     checkpoint_path = os.path.join(repo_root, "models", "ImprovedNeuralNetwork.pth")
@@ -26,7 +28,7 @@ if __name__ == "__main__":
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
-    x = torch.tensor([[vx0, vy0, mass]], dtype=torch.float32)
+    x = torch.tensor([[vx0, vy0, mass, height0, windAccel]], dtype=torch.float32)
     x = add_engineered_features(x)
     x = (x - checkpoint["input_mean"]) / checkpoint["input_std"]
     with torch.no_grad():

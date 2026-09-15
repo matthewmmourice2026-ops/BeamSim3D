@@ -9,9 +9,9 @@ from models.ImprovedNeuralNetwork import ImprovedNeuralNetwork
 THROW_SIM = "build/throw_sim"
 
 
-def ground_truth(vx0, vy0, mass):
+def ground_truth(vx0, vy0, mass, height0, wind_accel):
     result = subprocess.run(
-        [THROW_SIM, str(vx0), str(vy0), str(mass)],
+        [THROW_SIM, str(vx0), str(vy0), str(mass), str(height0), str(wind_accel)],
         capture_output=True, text=True, check=True,
     )
     values = result.stdout.strip().split(",")
@@ -26,8 +26,8 @@ def load_model():
     return model, checkpoint["input_mean"], checkpoint["input_std"]
 
 
-def predict(model, input_mean, input_std, vx0, vy0, mass):
-    x = torch.tensor([[vx0, vy0, mass]], dtype=torch.float32)
+def predict(model, input_mean, input_std, vx0, vy0, mass, height0, wind_accel):
+    x = torch.tensor([[vx0, vy0, mass, height0, wind_accel]], dtype=torch.float32)
     x = add_engineered_features(x)
     x = (x - input_mean) / input_std
     with torch.no_grad():
@@ -45,7 +45,8 @@ if __name__ == "__main__":
     # Must match ThrowRanges.h (no shared include across C++/Python, so
     # keep these in sync by hand if that file changes).
     test_throws = [
-        (random.uniform(-15.0, 65.0), random.uniform(5.0, 100.0), random.uniform(0.5, 20.0))
+        (random.uniform(-15.0, 65.0), random.uniform(5.0, 100.0), random.uniform(0.5, 20.0),
+         random.uniform(0.5, 20.0), random.uniform(-3.0, 3.0))
         for _ in range(num_test_throws)
     ]
 
@@ -55,15 +56,15 @@ if __name__ == "__main__":
     # apexTime, finalVx. Full per-row table for the first 3 (readable at
     # 7 columns), aggregate-only MAE for the other 4 (21 columns of
     # per-row detail would be unreadable in a terminal).
-    print(f"{'vx0':>7} {'vy0':>7} {'mass':>6} | {'real_x':>9} {'pred_x':>9} {'err_x':>7} | "
+    print(f"{'vx0':>7} {'vy0':>7} {'mass':>6} {'h0':>6} {'wind':>6} | {'real_x':>9} {'pred_x':>9} {'err_x':>7} | "
           f"{'real_y':>8} {'pred_y':>8} {'err_y':>7} | {'real_h':>8} {'pred_h':>8} {'err_h':>7}")
 
     x_errors, y_errors, h_errors = [], [], []
     t2l_errors, bounce_errors, apex_errors, vx_errors = [], [], [], []
 
-    for vx0, vy0, mass in test_throws:
-        real_x, real_y, real_h, real_t2l, real_bounce, real_apex, real_vx = ground_truth(vx0, vy0, mass)
-        pred_x, pred_y, pred_h, pred_t2l, pred_bounce, pred_apex, pred_vx = predict(model, input_mean, input_std, vx0, vy0, mass)
+    for vx0, vy0, mass, height0, wind_accel in test_throws:
+        real_x, real_y, real_h, real_t2l, real_bounce, real_apex, real_vx = ground_truth(vx0, vy0, mass, height0, wind_accel)
+        pred_x, pred_y, pred_h, pred_t2l, pred_bounce, pred_apex, pred_vx = predict(model, input_mean, input_std, vx0, vy0, mass, height0, wind_accel)
 
         err_x, err_y, err_h = abs(real_x - pred_x), abs(real_y - pred_y), abs(real_h - pred_h)
         x_errors.append(err_x)
@@ -75,7 +76,7 @@ if __name__ == "__main__":
         apex_errors.append(abs(real_apex - pred_apex))
         vx_errors.append(abs(real_vx - pred_vx))
 
-        print(f"{vx0:7.1f} {vy0:7.1f} {mass:6.1f} | {real_x:9.3f} {pred_x:9.3f} {err_x:7.3f} | "
+        print(f"{vx0:7.1f} {vy0:7.1f} {mass:6.1f} {height0:6.1f} {wind_accel:6.1f} | {real_x:9.3f} {pred_x:9.3f} {err_x:7.3f} | "
               f"{real_y:8.3f} {pred_y:8.3f} {err_y:7.3f} | {real_h:8.3f} {pred_h:8.3f} {err_h:7.3f}")
 
     def mae(errors):

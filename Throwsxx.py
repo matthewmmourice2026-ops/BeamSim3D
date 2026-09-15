@@ -28,12 +28,14 @@ input_mean = checkpoint["input_mean"]
 input_std = checkpoint["input_std"]
 
 # 2. Create a brand-new, unseen physics throw
-# Generate random values for velocity and mass
+# Generate random values for velocity, mass, launch height, and wind
 velocity_x = random.uniform(10.0, 200.0)
 velocity_y = random.uniform(1.0, 100.0)
 mass = random.uniform(0.1, 90.0)
+height0 = random.uniform(0.5, 20.0)
+wind_accel = random.uniform(-3.0, 3.0)
 
-new_throw = [velocity_x, velocity_y, mass]
+new_throw = [velocity_x, velocity_y, mass, height0, wind_accel]
 
 # Normalize the input data
 x_test = torch.tensor([new_throw], dtype=torch.float32)

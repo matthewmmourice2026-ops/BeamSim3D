@@ -8,7 +8,7 @@
 #include "ThrowRanges.h"
 
 struct ThrowResult {
-    float vx0, vy0, mass;
+    float vx0, vy0, mass, height0, windAccel;
     float finalX, finalY;
     float maxHeight;
     float timeToLand;
@@ -21,7 +21,8 @@ struct TrajectoryPoint {
     float x, y;
 };
 
-static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<TrajectoryPoint>* trajectory = nullptr) {
+static ThrowResult simulateThrow(float vx0, float vy0, float mass, float height0, float windAccel,
+                                  std::vector<TrajectoryPoint>* trajectory = nullptr) {
     const float dt = 0.01f;
     const float gravity = 9.81f;
     const float dragCoeff = 0.2f;
@@ -33,7 +34,7 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
     float apexTime = 0.0f;
     int bounceCount = 0;
     float timeToLand = maxSteps * dt; // default if it never fully settles
-    float x = 0.0f, y = 1.0f;
+    float x = 0.0f, y = height0;
     float vx = vx0, vy = vy0;
 
     if (trajectory) {
@@ -41,7 +42,10 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
     }
 
     for (int step = 0; step < maxSteps; ++step) {
-        float ax = -dragCoeff * vx / mass;
+        // windAccel is a constant horizontal push for the whole flight,
+        // not a drag term - simplest physically-reasonable model of a
+        // steady crosswind without adding wind-relative-velocity drag.
+        float ax = -dragCoeff * vx / mass + windAccel;
         float ay = -gravity - dragCoeff * vy / mass;
 
         vx += ax * dt;
@@ -82,33 +86,38 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
         }
     }
 
-    return { vx0, vy0, mass, x, y, maxHeight, timeToLand, (float)bounceCount, apexTime, vx };
+    return { vx0, vy0, mass, height0, windAccel, x, y, maxHeight, timeToLand, (float)bounceCount, apexTime, vx };
 }
 
 int main(int argc, char** argv) {
-    // Single-throw mode: ./throw_sim <vx0> <vy0> <mass> prints "final_x,final_y"
-    // and exits. Lets other tools (e.g. compare_predictions.py) ask the real
-    // physics engine for ground truth instead of re-implementing it elsewhere.
-    if (argc == 4) {
+    // Single-throw mode: ./throw_sim <vx0> <vy0> <mass> <height0> <windAccel>
+    // prints the outputs and exits. Lets other tools (e.g. compare_predictions.py)
+    // ask the real physics engine for ground truth instead of re-implementing
+    // it elsewhere.
+    if (argc == 6) {
         float vx0 = std::stof(argv[1]);
         float vy0 = std::stof(argv[2]);
         float mass = std::stof(argv[3]);
-        ThrowResult r = simulateThrow(vx0, vy0, mass);
+        float height0 = std::stof(argv[4]);
+        float windAccel = std::stof(argv[5]);
+        ThrowResult r = simulateThrow(vx0, vy0, mass, height0, windAccel);
         std::cout << r.finalX << "," << r.finalY << "," << r.maxHeight << ","
                    << r.timeToLand << "," << r.bounceCount << "," << r.apexTime << "," << r.finalVx
                    << std::endl;
         return 0;
     }
 
-    // Trajectory mode: ./throw_sim --trajectory <vx0> <vy0> <mass> prints
-    // one "x,y" line per simulation step, for animating the flight path
-    // instead of just showing where it lands.
-    if (argc == 5 && std::string(argv[1]) == "--trajectory") {
+    // Trajectory mode: ./throw_sim --trajectory <vx0> <vy0> <mass> <height0>
+    // <windAccel> prints one "x,y" line per simulation step, for animating
+    // the flight path instead of just showing where it lands.
+    if (argc == 7 && std::string(argv[1]) == "--trajectory") {
         float vx0 = std::stof(argv[2]);
         float vy0 = std::stof(argv[3]);
         float mass = std::stof(argv[4]);
+        float height0 = std::stof(argv[5]);
+        float windAccel = std::stof(argv[6]);
         std::vector<TrajectoryPoint> trajectory;
-        simulateThrow(vx0, vy0, mass, &trajectory);
+        simulateThrow(vx0, vy0, mass, height0, windAccel, &trajectory);
         for (const auto& p : trajectory) {
             std::cout << p.x << "," << p.y << "\n";
         }
@@ -122,18 +131,21 @@ int main(int argc, char** argv) {
     std::uniform_real_distribution<float> vxDist(VX_MIN, VX_MAX);
     std::uniform_real_distribution<float> vyDist(VY_MIN, VY_MAX);
     std::uniform_real_distribution<float> massDist(MASS_MIN, MASS_MAX);
-    std::uniform_real_distribution<float> heightDist(0.0f, 0.0f); // For starting height at x=0   
+    std::uniform_real_distribution<float> heightDist(HEIGHT_MIN, HEIGHT_MAX);
+    std::uniform_real_distribution<float> windDist(WIND_MIN, WIND_MAX);
 
     std::ofstream out("throw_results.csv");
-    out << "vx0,vy0,mass,final_x,final_y,maxHeight,timeToLand,bounceCount,apexTime,finalVx\n";
+    out << "vx0,vy0,mass,height0,windAccel,final_x,final_y,maxHeight,timeToLand,bounceCount,apexTime,finalVx\n";
 
     for (int i = 0; i < throwCount; ++i) {
         float vx0 = vxDist(gen);
         float vy0 = vyDist(gen);
         float mass = massDist(gen);
-        ThrowResult r = simulateThrow(vx0, vy0, mass);
+        float height0 = heightDist(gen);
+        float windAccel = windDist(gen);
+        ThrowResult r = simulateThrow(vx0, vy0, mass, height0, windAccel);
 
-        out << r.vx0 << "," << r.vy0 << "," << r.mass << ","
+        out << r.vx0 << "," << r.vy0 << "," << r.mass << "," << r.height0 << "," << r.windAccel << ","
             << r.finalX << "," << r.finalY << "," << r.maxHeight << ","
             << r.timeToLand << "," << r.bounceCount << "," << r.apexTime << "," << r.finalVx << "\n";
     }

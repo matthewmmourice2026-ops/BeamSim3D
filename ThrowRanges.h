@@ -10,5 +10,7 @@
 static const float VX_MIN = -15.0f, VX_MAX = 65.0f;
 static const float VY_MIN = 5.0f, VY_MAX = 100.0f;
 static const float MASS_MIN = 0.5f, MASS_MAX = 20.0f;
+static const float HEIGHT_MIN = 0.5f, HEIGHT_MAX = 20.0f;   // launch height
+static const float WIND_MIN = -3.0f, WIND_MAX = 3.0f;       // constant horizontal wind accel
 
 #endif // THROW_RANGES_H
