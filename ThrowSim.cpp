@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const int throwCount = 500000;
+    const int throwCount = 1000000;
 
     std::random_device rd;
     std::mt19937 gen(rd());

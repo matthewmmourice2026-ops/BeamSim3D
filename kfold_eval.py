@@ -63,6 +63,11 @@ for fold in range(k):
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.75, patience=55)
 
+    # Matches main.py: early stopping/scheduler watch val_loss + val_unc_loss
+    # combined, not val_loss alone, so the uncertainty head gets a real
+    # chance to finish calibrating instead of stopping the moment the
+    # point-estimate loss plateaus.
+    best_combined_loss = float("inf")
     best_val_loss = float("inf")
     epochs_no_improve = 0
 
@@ -80,10 +85,13 @@ for fold in range(k):
         with torch.no_grad():
             val_outputs = model(val_inputs)
             val_loss = criterion(val_outputs[:, :7], val_targets)
+            val_unc_loss = uncertainty_loss(val_outputs, val_targets)
 
-        scheduler.step(val_loss.item())
+        combined_val_loss = val_loss.item() + val_unc_loss.item()
+        scheduler.step(combined_val_loss)
 
-        if val_loss.item() < best_val_loss:
+        if combined_val_loss < best_combined_loss:
+            best_combined_loss = combined_val_loss
             best_val_loss = val_loss.item()
             epochs_no_improve = 0
         else:

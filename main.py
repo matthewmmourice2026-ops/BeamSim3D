@@ -81,7 +81,15 @@ scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0
 # Train, with early stopping on val loss
 epochs = 50000
 patience = 150
-best_val_loss = float("inf")
+# Early stopping/scheduler now watch val_loss + val_unc_loss combined, not
+# val_loss alone. Previously the uncertainty head could still be actively
+# calibrating (its loss still trending down) when training stopped, purely
+# because the point-estimate loss happened to plateau first - the
+# combined metric gives calibration a real chance to finish, not just
+# whatever epochs happen to fall out of the main task converging.
+best_combined_loss = float("inf")
+best_val_loss = float("inf")       # main-loss value at the best epoch, kept for reporting/comparability with past runs
+best_val_unc_loss = float("inf")
 best_state = None
 epochs_no_improve = 0
 
@@ -109,8 +117,10 @@ for epoch in range(epochs):
         val_loss = criterion(val_outputs[:, :7], val_targets)
         val_unc_loss = uncertainty_loss(val_outputs, val_targets)
 
+    combined_val_loss = val_loss.item() + val_unc_loss.item()
+
     prev_lr = optimizer.param_groups[0]["lr"]
-    scheduler.step(val_loss.item())
+    scheduler.step(combined_val_loss)
     new_lr = optimizer.param_groups[0]["lr"]
     if new_lr != prev_lr:
         print(f"Epoch {epoch + 1}: learning rate reduced {prev_lr:.6f} -> {new_lr:.6f}")
@@ -119,8 +129,10 @@ for epoch in range(epochs):
         print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss.item():.4f}, "
               f"Uncertainty Loss: {val_unc_loss.item():.4f}")
 
-    if val_loss.item() < best_val_loss:
+    if combined_val_loss < best_combined_loss:
+        best_combined_loss = combined_val_loss
         best_val_loss = val_loss.item()
+        best_val_unc_loss = val_unc_loss.item()
         best_state = copy.deepcopy(model.state_dict())
         epochs_no_improve = 0
     else:
@@ -132,6 +144,7 @@ for epoch in range(epochs):
 model.load_state_dict(best_state)
 print(f"Final train loss: {train_loss:.4f}")
 print(f"Best val loss: {best_val_loss:.4f}")
+print(f"Best val uncertainty loss: {best_val_unc_loss:.4f}")
 
 # Honest final number: test set was never used for early stopping or any
 # other decision during training, so this isn't cherry-picked like the
