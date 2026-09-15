@@ -59,11 +59,11 @@ optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
 # instead of oscillating around a coarse fixed step size. Scheduler
 # patience is shorter than early-stopping patience so it gets a chance
 # to act before training just stops.
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.69, patience=35)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.75, patience=55)
 
 # Train, with early stopping on val loss
 epochs = 50000
-patience = 50
+patience = 100
 best_val_loss = float("inf")
 best_state = None
 epochs_no_improve = 0

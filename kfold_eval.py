@@ -24,7 +24,7 @@ inputs = add_engineered_features(inputs)
 
 k = 5
 epochs = 50000
-patience = 50
+patience = 100
 batch_size = 2048
 
 torch.manual_seed(42)
@@ -52,7 +52,7 @@ for fold in range(k):
     model = ImprovedNeuralNetwork().to(device)
     criterion = nn.HuberLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.69, patience=35)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.75, patience=55)
 
     best_val_loss = float("inf")
     epochs_no_improve = 0
