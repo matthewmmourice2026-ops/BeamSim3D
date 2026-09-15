@@ -1,107 +1,304 @@
-# Improvements Log
+# BeamSim3D — Architecture Reference & Improvements Log
 
-## Summary
+This document is written to be self-contained: a reader (human or AI) should be able to understand the entire system — what it does, how every piece fits together, exact formulas and configuration — without opening any source file. The second half is a running history of what was tried, what worked, and what didn't, with real numbers from actual runs.
 
-BeamSim3D is a C++ physics simulation engine (raylib, CMake) that generates synthetic projectile-throw data, a PyTorch neural network trained on that data to predict landing position and max height, and a 3D game (`throw_game`) that pits the trained model against the real physics live, with player-vs-AI scoring, target zones, and persistent stats. Everything below is pulled from actual training runs and git history, not estimates.
+## 1. What this project is
 
-Headline numbers (current best, 500000-throw dataset):
-- Validation loss improved **~500x** over the course of development (215.10 → 0.4262), while the task itself got harder along the way (3 outputs instead of 1, 50x more data, a much wider input range)
-- MAE against real physics on unseen throws: **x = 0.969, y = 0.168, max_height = 0.640**
-- Held-out test loss (0.4321) closely matches validation loss (0.4262) - confirms the result generalizes, not a lucky split
-- Caught and fixed a real data pipeline bug (dataset silently never regenerated after a config change) **twice** - once for the initial dataset, once again when a 3rd output was added - that had made several "improvements" meaningless until diagnosed
-- Caught and fixed a training-loop bug where early-stopping patience was shorter than the LR scheduler's patience, causing training to give up before the scheduler ever got a chance to act (79 epochs instead of 928, val loss 5x worse)
+Three components, in order of how they build on each other:
 
-## Architecture
+1. **A C++ physics engine** (`ThrowSim.cpp`) that simulates a projectile thrown with a given velocity, mass, launch height, and wind, integrated frame by frame with gravity, drag, and a bounce off procedurally-generated rolling-hill terrain. It has a batch mode that generates a large dataset of randomized throws, and CLI modes for asking the real physics for ground truth on one specific throw.
+2. **A PyTorch training pipeline** (`main.py` and supporting scripts) that trains a neural network on that dataset to predict where a thrown object will land — plus a self-estimate of how confident it is.
+3. **A 3D game** (`ThrowGame.cpp`) that renders a throw live, animates the real physics alongside the AI's prediction, and lets a player compete against the AI (closest guess to the real landing spot wins), with target-zone scoring and persistent stats.
 
-| Version | Hidden layers | Neurons | Params | Notes |
-|---|---|---|---|---|
-| v1 | 1 | 16 | - | Original prototype |
-| v2 | 2 | 16, 32 | - | |
-| v3 | 2 | 92, 150 | - | |
-| v4 | 3 | 92, 150, 200 | - | |
-| v5 | 3 | 92, 150, 200 | - | dropout tuned down |
-| v6 | 4 | 92, 150, 200, 270 | - | |
-| v7 | 6 | 92, 150, 200, 290, 450, 600 | - | + LR scheduler added |
-| v8 | 6 | 250, 250, 250, 300, 450, 600 | 614,103 | widened, best verified result (x=1.129 MAE) |
-| v9 (current) | 8 | 250, 250, 250, 300, 450, 600, 1200, 2000 | 3,747,903 | + 4th engineered input feature |
+There's also a separate, earlier soft-body vehicle physics demo (`main.cpp`, `Physics.cpp`/`.h`, executable `beam_sim`) that predates the throw/ML side of the project and is unrelated to it — a mass-spring vehicle chassis rendered in its own raylib window.
 
-v1 was a separate, simpler model that got merged into what's now `models/ImprovedNeuralNetwork.py`. Every version after is that same file getting wider and deeper.
+## 2. File inventory
 
-## Metrics: the early story (10000-row dataset)
+```
+Physics engine & vehicle demo (unrelated to the throw/ML side):
+  main.cpp, Physics.cpp, Physics.h        beam_sim executable
 
-This is the real story, including the mistakes, because the mistakes are as instructive as the wins.
+Throw physics & dataset generation:
+  ThrowSim.cpp                             throw_sim executable (physics engine + CLI + batch dataset gen)
+  Terrain.h                                terrain height function, shared by ThrowSim.cpp and ThrowGame.cpp
+  ThrowRanges.h                            input parameter ranges, shared by ThrowSim.cpp and ThrowGame.cpp
 
-| Stage | Setup | Result |
+The game:
+  ThrowGame.cpp                            throw_game executable
+  Shaders/lighting.vs, lighting.fs         Blinn-Phong lighting shader for terrain + spheres
+  Shaders/postprocess.fs                   vignette/contrast post-process pass
+
+ML pipeline (Python):
+  features.py                              engineered input feature, shared by every script that touches the model
+  models/ImprovedNeuralNetwork.py          the model class
+  models/ImprovedNeuralNetwork.pth         saved weights + input normalization stats (checkpoint)
+  main.py                                  trains the model, saves the checkpoint
+  kfold_eval.py                            5-fold cross validation, mirrors main.py's setup
+  predict.py                               CLI single-prediction (what ThrowGame.cpp calls)
+  compare_predictions.py                   checks the model against real physics + uncertainty calibration check
+  Throwsxx.py                              quick random-throw inference demo
+  load_dataset.py                          sanity-checks the CSV loads into tensors correctly
+
+Build:
+  CMakeLists.txt                           builds beam_sim, throw_sim, throw_game
+
+Data (not committed, regenerated locally):
+  build/throw_results.csv                  dataset generated by throw_sim's batch mode
+  game_stats.txt                           player's persistent game stats (repo root, outside build/)
+```
+
+## 3. The physics engine (`ThrowSim.cpp`)
+
+### 3.1 Simulation
+
+Fixed-timestep integration, `dt = 0.01s`, up to `maxSteps = 5000` (50 simulated seconds).
+
+Per step:
+```
+ax = -dragCoeff * vx / mass + windAccel
+ay = -gravity - dragCoeff * vy / mass
+vx += ax * dt;  vy += ay * dt
+x  += vx * dt;  y  += vy * dt
+```
+Constants: `gravity = 9.81`, `dragCoeff = 0.2`, `restitution = 0.4`, `groundFriction = 0.7`, `restEps = 0.05`.
+
+`windAccel` is a **constant horizontal acceleration** applied every step for the whole flight (not velocity-relative drag) — the simplest physically-reasonable model of a steady crosswind.
+
+Ground collision: `ground = terrainHeight(x)` (see 3.2). If `y <= ground`: a bounce is counted if the incoming `|vy| > 0.5` (see the gotcha in section 6 about why), then `y = ground`, `vy = -vy * restitution`, `vx *= groundFriction`, and `vy` snaps to exactly `0` if `|vy| < restEps`.
+
+Rest condition (ends the simulation): `y == ground && |vy| < restEps && |vx| < restEps`. If this is never reached within `maxSteps`, the simulation just stops at the cap (see gotcha in section 6 about wind preventing settling).
+
+Tracked throughout: `maxHeight` (peak `y` reached) and `apexTime` (sim time it was reached), `bounceCount` (real impacts only), `timeToLand` (sim time at rest, or the 50s cap).
+
+### 3.2 Terrain (`Terrain.h`)
+
+```
+terrainHeight(x) = 2*sin(x*0.05) + 0.5*sin(x*0.13)
+terrainSlope(x)  = 2*0.05*cos(x*0.05) + 0.5*0.13*cos(x*0.13)   // d/dx, used for rendering normals
+```
+Only varies with `x`, flat across `z`. This single function is shared by `ThrowSim.cpp` (physics) and `ThrowGame.cpp` (rendering) via the header so they can never disagree with each other.
+
+### 3.3 Input ranges (`ThrowRanges.h`)
+
+```
+VX_MIN, VX_MAX         = -15.0, 65.0
+VY_MIN, VY_MAX         = 5.0, 100.0
+MASS_MIN, MASS_MAX     = 0.5, 20.0
+HEIGHT_MIN, HEIGHT_MAX = 0.5, 20.0
+WIND_MIN, WIND_MAX     = -3.0, 3.0
+```
+Shared by `ThrowSim.cpp` (dataset generation, uniform random sampling) and `ThrowGame.cpp` (player control clamping). A trained model is only meaningful for inputs inside the range it was trained on — if these two ever disagree, the game would let a player throw at values the model has never seen.
+
+### 3.4 CLI interface
+
+```
+./throw_sim                                                    batch mode: generates throwCount random
+                                                                 throws, writes build/throw_results.csv
+                                                                 (must be run from build/)
+
+./throw_sim <vx0> <vy0> <mass> <height0> <windAccel>            single-throw mode (5 args): prints
+                                                                 "final_x,final_y,maxHeight,timeToLand,
+                                                                 bounceCount,apexTime,finalVx" and exits
+
+./throw_sim --trajectory <vx0> <vy0> <mass> <height0> <windAccel>   trajectory mode: prints one "x,y" line
+                                                                     per simulation step
+```
+`throwCount` is a constant in the source (currently `500000` in the committed source, though the dataset actually trained on most recently was regenerated at `1000000` before that count was edited back down — see gotcha in section 6, this exact situation is a live example of it).
+
+### 3.5 CSV schema
+
+`build/throw_results.csv` header (12 columns, inputs then outputs):
+```
+vx0,vy0,mass,height0,windAccel,final_x,final_y,maxHeight,timeToLand,bounceCount,apexTime,finalVx
+```
+
+## 4. The model
+
+### 4.1 Inputs (6 total fed to the network)
+
+5 raw: `vx0, vy0, mass, height0, windAccel`, plus 1 engineered feature appended by `features.py`:
+```
+x_inf = vx0 * mass / DRAG_COEFF        (DRAG_COEFF = 0.2, must match ThrowSim.cpp's dragCoeff)
+```
+This is the asymptotic horizontal range under pure exponential drag decay (ignoring terrain/bounce/wind/height) — the dominant factor driving `final_x`, so it gives the network a head start instead of learning that relationship from scratch. It indexes `vx0` at column 0 and `mass` at column 2 of the raw input tensor — unaffected by `height0`/`windAccel` being appended after `mass`, not inserted between `vx0` and `mass`.
+
+### 4.2 Outputs (8 total)
+
+Indices 0–6 are real regression targets with a matching CSV column, trained with Huber loss:
+```
+0: final_x       1: final_y       2: maxHeight     3: timeToLand
+4: bounceCount   5: apexTime      6: finalVx
+```
+Index 7 is a **log-variance uncertainty head** — not a regression target (no CSV column exists for it, since "the model's confidence" isn't a physical quantity `ThrowSim.cpp` can compute). See section 5.3 for how it's trained.
+
+### 4.3 Architecture (`models/ImprovedNeuralNetwork.py`)
+
+Feedforward, 9 hidden layers, ReLU → BatchNorm1d → Dropout after each:
+
+| Layer | Shape | Dropout |
 |---|---|---|
-| First real training run | v2 arch, 1000 throws (flat ground), no val split | Loss 215.10 |
-| More epochs | Same | Loss 5.20 (plateaued) |
-| Manual LR tuning | Same | Loss 0.32 |
-| Added train/val split | Same data, 80/20 split for the first time | Train 0.29, **val 6.46** |
+| fc1 | 6 → 250 | 1e-10 |
+| fc2 | 250 → 250 | 1e-10 |
+| fc3 | 250 → 250 | 1e-10 |
+| fc4 | 250 → 300 | 1e-10 |
+| fc5 | 300 → 450 | 1e-10 |
+| fc6 | 450 → 600 | 1e-10 |
+| fc7 | 600 → 1200 | 1e-10 |
+| fc8 | 1200 → 2000 | 1e-10 |
+| fc9 | 2000 → 2000 | 1e-10 |
+| fc10 (output) | 2000 → 8 | — (raw linear, no activation/BN/dropout) |
 
-That val loss was the real turning point. Train loss looked great the whole time, but the model was just memorizing the training rows. Val loss showed the truth: it wasn't generalizing at all.
+**Total parameters: 7,764,408.**
 
-| Stage | Setup | Result |
-|---|---|---|
-| Normalized inputs | vx0/vy0/mass were on wildly different scales | Val loss **0.056** (~115x better) |
-| Added terrain variance | Ground no longer flat, harder target to predict | Val loss 0.076 |
-| Added early stopping | Best-checkpoint saved instead of last-epoch | More reliable, same ballpark |
+## 5. Training (`main.py`)
 
-Then a real bug got caught: `ThrowSim.cpp`'s throw count had been bumped 1000 → 5000 → 10000, but the dataset file never got regenerated after the first bump. Editing the C++ source doesn't do anything until you rebuild the binary AND rerun it. Every "bigger dataset" result up to that point was still trained on the original 1000-row file.
+### 5.1 Data pipeline
 
-| Stage | Setup | Result |
-|---|---|---|
-| Before the fix (stale 1000-row data) | v4 arch | Val loss 0.115, MAE x=0.35, y=0.08 |
-| After the fix (real 10000-row data) | v6 arch | Val loss **0.0114**, MAE x=0.104, y=0.038 |
-| 5-fold cross validation | v6 arch | Mean val loss 0.0105, std dev 0.0013 |
+Loads `build/throw_results.csv` → builds a `(N, 5)` raw input tensor and `(N, 7)` target tensor → appends the engineered feature (→ `(N, 6)`) → splits **70/15/15 train/val/test**, shuffled with a fixed seed (`torch.manual_seed(42)`) → normalizes inputs to zero-mean/unit-variance using **train-set statistics only** (no leakage into val/test). **Targets are not normalized** — trained once, found to hurt more than help (see section 8).
 
-The 5-fold result matters most here. A single train/val split can get lucky. Five folds landing within 0.0013 of each other means this is a real, repeatable number.
+Device: `mps` (Apple Silicon GPU) if available, else `cpu`. Checkpoint is always saved with CPU tensors regardless of training device, so it loads on any machine.
 
-## Metrics: scaling up (50000-row dataset, 3rd output added)
+### 5.2 Mini-batching
 
-Added `maxHeight` as a 3rd predicted output alongside landing x/y (tracked via a running max during the C++ simulation, not guessed). Task got harder - more to predict, plus the input range was widened (vx/vy/mass ranges roughly tripled) to support a wider variety of gameplay throws in `throw_game`, which increases the parameter space the model has to cover.
+`DataLoader`, `batch_size = 2048`, shuffled. (Originally full-batch — one gradient update per epoch over the entire train set — which became the main bottleneck once the dataset passed ~50000 rows; mini-batching gives far more updates per pass through the data.)
 
-| Stage | Setup | Result |
-|---|---|---|
-| 3rd output added, 10000-row data (stale/1000-row bug from before, caught again) | v6-ish arch | MAE x=2.728, y=1.116, h=0.771 (after fixing the stale-data repeat) |
-| Scaled to 50000 rows | Same arch | Val loss 13.32 → 7.20, MAE x 2.728 → 1.712 |
-| Added LR scheduler (`ReduceLROnPlateau`) | First attempt: too aggressive (patience=15, factor=0.1) | Val loss 10.59, **worse** than no scheduler |
-| Retuned scheduler + widened network together | factor=0.69, patience=35; layers widened to v8 | Val loss 3.24. MAE x=1.129, y=1.038, h=0.445 - **all three improved, no tradeoff** |
-| Tried normalizing targets (not just inputs) | Fixed y's starved gradient | MAE y improved to 0.226, but x got 3x worse (4.840) - net loss |
-| Tried weighted loss on top of that | Weighted x higher to compensate | Still worse than plain raw MSE on x and h - reverted both experiments |
+### 5.3 Loss
 
-Two real lessons here, not just numbers:
-1. **Hyperparameters aren't free wins.** The first LR scheduler attempt made things measurably worse. Retuning it (not abandoning the idea) is what turned it into the single biggest win of this phase.
-2. **A "textbook fix" isn't guaranteed to help your specific task.** Target normalization and weighted loss are both standard techniques for exactly the problem observed (one output dominating the loss), and both made the result worse in practice here - likely because the outputs share a trunk in this architecture and don't decouple cleanly. Verified via `compare_predictions.py` against real physics, not just trusted on faith, and reverted when the numbers said so.
+Two separate loss terms, summed for the backward pass:
 
-## Metrics: 500000-row dataset, mini-batching, MPS, 8-layer model
+```python
+main_loss = HuberLoss(outputs[:, :7], targets)   # the 7 real targets
 
-A lot changed at once here: mini-batch training instead of full-batch (was the main speed bottleneck once the dataset passed 50000 rows), MPS (Apple Silicon GPU) support, a 4th engineered input feature (physics-informed: asymptotic drag-decay range under pure exponential drag decay), Huber loss instead of MSE, weight decay added, a train/val/**test** split (70/15/15) instead of train/val (80/20) so the final number is never touched by early-stopping decisions, and the architecture grown to 8 hidden layers (~3.7M params).
+# outputs[:, 7] is a log-variance. Trained to predict the model's own
+# (x, y) landing-position error via Gaussian negative log-likelihood.
+# The point-estimate outputs are DETACHED here so this loss only trains
+# the uncertainty head — it doesn't also push back on x/y, which are
+# already trained by main_loss above.
+xy_error_sq = (outputs[:, 0].detach() - targets[:, 0])**2 + (outputs[:, 1].detach() - targets[:, 1])**2
+log_var = outputs[:, 7]
+uncertainty_loss = mean(0.5 * exp(-log_var) * xy_error_sq + 0.5 * log_var)
 
-| Stage | Setup | Result |
-|---|---|---|
-| First mini-batch/MPS run | scheduler patience=55, early-stop patience=50 (bug: scheduler patience longer than early-stop) | 79 epochs, val loss 2.03, MAE x=4.233, y=0.962, h=2.124 - **worse than the previous best on x and h** |
-| Fixed early-stop patience to 100 (> scheduler's 55) | Same everything else | 928 epochs, val loss **0.4262**, test loss 0.4321, MAE x=0.969, y=0.168, h=0.640 |
+loss = main_loss + uncertainty_loss   # this is what .backward() is called on
+```
+`weight_decay=1e-4` on Adam, `lr=0.001` initial.
 
-The bug: early-stopping patience was *shorter* than the LR scheduler's patience, backwards from how they're supposed to relate (scheduler needs room to act before training gives up, not the other way around). Training stopped at epoch 79 having barely let the scheduler fire once. Fixing the patience relationship alone was a 5x improvement in val loss and a 6x improvement in y's MAE, using the exact same architecture and data. A one-line config bug outweighed several actual training-pipeline features (mini-batching, MPS, the engineered feature) combined - infrastructure only pays off if the loop around it is actually configured to let it work.
+**Important:** everywhere "Val Loss" or "Test loss" is reported (in training output, in this document's history section, in `compare_predictions.py`), it means `main_loss` only — the 7-target Huber loss. `uncertainty_loss` is tracked and printed separately, and is folded into the *decision* of which epoch counts as "best" (see 5.5), but the reported loss numbers themselves stay on the same scale as every historical run, so they remain comparable across this whole project's history.
 
-The params-to-data ratio here (3.7M params, 500000 rows, dropout down to near-zero) was flagged as a real overfitting risk before this ran. It didn't overfit - val and test loss stayed close together - most likely because the 10x larger dataset gave the bigger model enough signal to actually use that capacity instead of memorizing.
+### 5.4 Optimizer / scheduler
 
-## The game (`throw_game`)
+`Adam(lr=0.001, weight_decay=1e-4)`. `ReduceLROnPlateau(factor=0.75, patience=55)` — halves-ish the LR when the combined val metric (5.5) stalls for 55 epochs. **The scheduler's patience must be shorter than the early-stopping patience below**, or early stopping fires before the scheduler ever gets a chance to act (this exact bug happened once — see section 8).
 
-Combines the physics engine and the trained model into an actual playable piece, not just a training pipeline:
-- Real-time 3D rendering (raylib) with a custom Blinn-Phong lighting shader, analytically-correct terrain normals, dynamic shadows, and a post-process pass (vignette/contrast) via render-to-texture
-- Animates the real physics trajectory frame-by-frame (not just the final resting point) alongside the AI's predicted landing point, so the two are visually comparable as they happen
-- Player-vs-AI guessing mode: player places a guess marker, whoever lands closer to the real physics wins
-- Target-zone scoring, particle effects and camera shake on impact, persistent stats saved across sessions
-- Bridges C++ and Python via subprocess calls to the real engine and the trained model, rather than reimplementing either in the other language - avoids the exact class of bug that hit the dataset earlier (two copies of the same logic silently drifting apart)
+### 5.5 Early stopping
 
-## What actually moved the needle, ranked
+`patience = 100` epochs, `epochs = 50000` cap (early stopping always fires first in practice). The metric watched for both the scheduler and early-stopping is:
+```
+combined_val_loss = val_loss + val_uncertainty_loss
+```
+(Originally `val_loss` alone — meaning the uncertainty head could still be actively calibrating, its loss still trending down, when training stopped purely because the point-estimate loss happened to plateau first. Fixed to watch both; see section 8.)
 
-1. **Fixing the stale-dataset bug** (recurred twice - once for the initial dataset, once when the 3rd output was added). Bigger architecture and "more data" did nothing until the data was actually real. Biggest recurring lesson of the whole project.
-2. **Fixing the early-stop-vs-scheduler patience relationship.** A one-line config bug (early stopping shorter than scheduler patience, the two need to relate in the opposite order) cost 5x on val loss and 6x on one output's MAE - bigger than several actual feature additions (mini-batching, MPS, the engineered input) combined.
-3. **Input normalization.** 115x improvement from one change.
-4. **Retuning the LR scheduler after the first attempt made things worse.** The difference between a hyperparameter change helping vs. hurting was entirely in the tuning, not the idea itself.
-5. **Adding the train/val split**, which is what made every subsequent fix possible to actually evaluate honestly.
-6. **Scaling the dataset up** (1000 → 10000 → 50000 → 500000), each time it was genuinely regenerated.
-7. Architecture widening, dropout tuning, mini-batching, MPS. Real, incremental gains, but the two config bugs above outweighed all of them individually.
-8. **Target normalization and weighted loss** - tried, measured, and reverted when they made things worse. Included here because knowing when *not* to keep a change is as much a skill as making one.
+The best-epoch's `val_loss` (main loss alone, not the combined metric) is what gets printed and stored for comparability with history.
+
+### 5.6 Checkpoint format
+
+`torch.save()` to `models/ImprovedNeuralNetwork.pth`, a dict with keys:
+```
+model_state_dict    (CPU tensors)
+input_mean           (CPU tensor, shape (6,))
+input_std             (CPU tensor, shape (6,))
+```
+No `target_mean`/`target_std` keys — targets aren't normalized.
+
+## 6. Known gotchas (read before changing anything)
+
+1. **Editing `ThrowSim.cpp` does nothing on its own.** Changing `throwCount`, a range in `ThrowRanges.h`, or any physics constant requires rebuilding (`make throw_sim` from `build/`) **and** actually rerunning it (`./throw_sim`) to regenerate `throw_results.csv`. This has caused multiple "why isn't my change having any effect" sessions — training silently continues on the old dataset otherwise. Sanity check: `wc -l build/throw_results.csv` should read `throwCount + 1`.
+2. **Scheduler patience must be shorter than early-stopping patience.** If not, early stopping can fire before the LR scheduler ever triggers, which measurably hurt results once (5x worse val loss) before being caught and fixed.
+3. **Strong wind can prevent an object from ever fully settling** within the 50s cap — wind and ground friction can reach a nonzero steady-state drift velocity instead of true zero. `timeToLand` hits the cap for some windy throws. This is real behavior of the simplified physics model, not a bug.
+4. **Bounce counting must filter out resting-frame noise.** The ground-collision branch re-triggers almost every frame once an object is resting (gravity nudges `y` a hair below `ground` each frame), which would inflate a naive bounce counter into the hundreds. Only impacts with incoming `|vy| > 0.5` count.
+5. **Output/target column order is a hard contract.** `[final_x, final_y, maxHeight, timeToLand, bounceCount, apexTime, finalVx]` (indices 0–6) must exactly match the column order used everywhere targets are selected from the dataframe, or predictions silently misalign with the wrong physical meaning. Index 7 (uncertainty) has no CSV counterpart and is never selected from the dataframe.
+6. **Every script that runs the model must apply `add_engineered_features()` and normalize with the checkpoint's `input_mean`/`input_std`**, in that order. `ThrowGame.cpp` never calls the model directly — it always shells out to `predict.py`, so it never has to replicate this logic itself (same reasoning as sharing `Terrain.h`/`ThrowRanges.h`: one source of truth instead of two copies that can drift apart).
+7. **`Throwsxx.py` samples wider ranges than the model was trained on** (e.g. mass up to 90 vs the trained max of 20) — intentional exploration, but predictions on those throws are extrapolation, not verified accuracy.
+
+## 7. The game (`ThrowGame.cpp`)
+
+### 7.1 Window & rendering
+
+`1000×600` fixed **internal** render resolution (everything — 3D scene and HUD — is drawn to an offscreen `RenderTexture2D` at this size), `FLAG_WINDOW_RESIZABLE`, minimum window size `480×300`, `F11` toggles fullscreen. The final composite step scales and letterboxes that fixed-resolution texture to fit whatever the actual window size is — HUD/layout code never has to think about window size, only that one composite step does.
+
+Rendering order per frame: sky gradient (2D rect) → 3D pass (lit terrain model with a custom Blinn-Phong shader and analytically-correct normals from `terrainSlope`, player's guess marker as a translucent disc, target flag, real/predicted flight trails as lines, drop-shadow discs under both balls at the terrain height beneath them, the real ball (red) and predicted ball (gold) as lit spheres, a connecting line once both have landed, particle burst) → HUD (semi-transparent panels + drop-shadow-outlined text, since there's no custom font file) → post-process shader pass (vignette + contrast) as the final composite.
+
+### 7.2 Controls
+
+```
+LEFT/RIGHT    adjust vx           (10 units/s)
+UP/DOWN       adjust vy           (10 units/s)
+[ / ]         adjust mass         (2 units/s)
+A / D         move landing guess  (30 units/s)
+SPACE         throw
+R             replay last throw's cached trajectory (no new subprocess calls, no re-scoring)
+F11           toggle fullscreen
+```
+All adjustments are locked out while a throw is mid-flight. `height0` and `windAccel` are **not** player controls — they're randomized fresh each throw (same as the target zone), to keep the control scheme simple.
+
+### 7.3 Subprocess bridge
+
+Two calls per throw, both assuming `build/` as the working directory:
+```
+./throw_sim --trajectory <vx0> <vy0> <mass> <height0> <windAccel>     → real physics (many "x,y" lines)
+python3 ../predict.py <vx0> <vy0> <mass> <height0> <windAccel>        → AI prediction (one line, 8 comma floats)
+```
+`predict.py`'s output is parsed with a full 8-field `sscanf`, keeping `x`, `y`, and the 8th field (uncertainty), skipping the rest with `%*f` rather than a partial-match trick. If either subprocess call fails (e.g. the Python venv isn't active in the launching shell), the game shows a fallback message instead of crashing — never treats a missing prediction as fatal.
+
+### 7.4 Animation
+
+The real ball plays back `throw_sim`'s step-by-step trajectory at `2.5×` real-time speed. The predicted ball has no real trajectory (the model only predicts the endpoint) — it flies on a synthetic parabolic arc from `height0` to `(predX, predY)`, timed to land simultaneously with the real ball.
+
+### 7.5 Scoring & persistent stats
+
+Once both the real and predicted landing are known: `aiError` = Euclidean distance between them; `playerError = |realX - guessX|`, player wins the round if their error is smaller; `target score += max(0, 100 - |realX - targetX|)`. Running stats (throw count, average/best/worst AI error, a streak counter for consecutive throws under 1.0 unit of error, player-vs-AI win tally, cumulative target score) are saved to `game_stats.txt` at the **repo root** (not inside `build/`, so a build wipe doesn't erase progress) immediately after every scored throw, as plain `key value` lines, loaded back on startup.
+
+## 8. Improvements log (chronological history, with real numbers)
+
+Architecture evolution (each version is the same file, `models/ImprovedNeuralNetwork.py`, getting wider/deeper over time):
+
+| Version | Hidden layers | Params | Notes |
+|---|---|---|---|
+| v1 | 1 (16 neurons) | — | Original prototype |
+| v2–v6 | 2 to 4 | — | Progressive widening/dropout tuning |
+| v7 | 6 | — | LR scheduler added |
+| v8 | 6 (250,250,250,300,450,600) | 614,103 | Best result on the original 3-output task: MAE x=1.129, y=1.038, h=0.445 |
+| v9 | 8 (…,1200,2000) | 3,747,903 | Added maxHeight/timeToLand/bounceCount/apexTime/finalVx (7 outputs), height0/windAccel inputs |
+| v10 (current) | 9 (…,2000,2000) | 7,764,408 | Added the uncertainty output (8th) |
+
+**Early story (10000-row dataset, 3-output task, most historically instructive):**
+
+First real training run (v2 arch, 1000 throws, no val split): loss `215.10`. More epochs: `5.20` (plateaued). Manual LR tuning: `0.32`. Then the train/val split was added for the first time — train `0.29`, **val `6.46`**. That val loss was the real turning point: train loss looked great the whole time, but the model was just memorizing the training rows.
+
+Input normalization (vx0/vy0/mass were on wildly different scales): val loss **`0.056`** — ~115x improvement from one change. Terrain variance added (harder target): `0.076`. Early stopping added: more reliable, same ballpark.
+
+Then a real bug was caught: `ThrowSim.cpp`'s throw count had been bumped 1000 → 5000 → 10000, but the dataset file was never regenerated after the first bump (see gotcha #1) — every "bigger dataset" result up to that point was still trained on the original 1000-row file. After the fix: val loss **`0.0114`**, MAE x=0.104, y=0.038 on the real 10000-row data. 5-fold CV confirmed it: mean `0.0105`, std dev `0.0013` — tight, not a lucky split.
+
+**Scaling up (50000-row dataset, still 3-output):**
+
+Scaled to 50000 rows: val loss `13.32 → 7.20`. First LR scheduler attempt was too aggressive (patience=15, factor=0.1) and made things measurably *worse* (`10.59` vs the `7.20` baseline) — retuned (factor=0.69→0.75 over a few iterations, patience=35→55) and combined with widening the network to v8: val loss `3.24` → eventually the v8 best of MAE x=1.129, y=1.038, h=0.445, all three metrics improved together, no tradeoff.
+
+Two things tried and **reverted** here because they measurably hurt results: normalizing the targets (fixed y's starved gradient, but tripled x's error) and weighted loss on top of that (still worse than plain unweighted Huber). Verified via `compare_predictions.py` and reverted when the numbers said so, not just abandoned on a hunch.
+
+**Expanding the task (7 outputs, height/wind inputs, uncertainty head):**
+
+Added `maxHeight`/`timeToLand`/`bounceCount`/`apexTime`/`finalVx` as 4 more outputs (7 total), then `height0`/`windAccel` as 2 more inputs (6 total with the engineered feature). Scaled to 500000 rows: val `7.20 → 0.4262`, MAE x=1.129→0.969, y=1.038→0.168 (6x better), h=0.445→0.640 (slight regression) — net win, on a genuinely harder task (more to predict, wider input space).
+
+Then the uncertainty output was added. First mini-batch/MPS run had the scheduler-patience-vs-early-stopping bug (gotcha #2): scheduler patience 55 > early-stop patience 50, so early stopping fired before the scheduler got real room to act — 79 epochs, val loss `2.03`, clearly undertrained. Fixed (early-stop patience raised to 100/150 across iterations, always kept longer than the scheduler's 55): `928` epochs, val loss **`0.4262`**, test `0.4321` — the fix alone was a 5x improvement, bigger than several actual feature additions combined.
+
+Scaled to 1000000 rows and also fixed early-stopping/scheduler to watch `val_loss + val_uncertainty_loss` combined (not `val_loss` alone) so the uncertainty head gets a real chance to finish calibrating: **best val loss `0.2968`, test loss `0.3019`** — close agreement, honest, currently the best result on this (much harder) 7-output task.
+
+`compare_predictions.py`'s calibration check on an earlier uncertainty checkpoint: predicted-uncertainty vs actual-landing-error correlation of `0.616` — meaning the uncertainty head learned something real (it's not random), though it was running about 3x too cautious on average (predicted std `14.978` vs actual mean error `5.230`) at that point, consistent with training having stopped before full calibration (which the combined-loss fix above directly addresses).
+
+## 9. What actually moved the needle, ranked
+
+1. **Fixing the stale-dataset bug** (gotcha #1) — recurred multiple times. Bigger architecture and "more data" did nothing until the data was actually real.
+2. **Fixing the scheduler/early-stopping patience relationship** (gotcha #2) — a one-line config bug cost 5x on val loss, bigger than several feature additions combined.
+3. **Input normalization** — 115x improvement from one change.
+4. **Adding the train/val split** — didn't improve anything by itself, but revealed the model was overfitting badly, which is what made every subsequent fix possible to evaluate honestly.
+5. **Scaling the dataset up** (1000 → 10000 → 50000 → 500000 → 1000000), each time genuinely regenerated.
+6. Architecture widening, dropout tuning, mini-batching, MPS. Real, incremental gains — smaller than the items above.
+7. **Target normalization and weighted loss** — tried, measured, reverted when the numbers said they hurt. Knowing when *not* to keep a change is as much a skill as making one.
