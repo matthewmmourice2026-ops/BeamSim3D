@@ -1,9 +1,11 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <limits>
@@ -11,11 +13,13 @@
 #include "ThrowRanges.h"
 
 // Throwing game combining the physics engine and the trained model.
-// Arrow keys adjust velocity, [ and ] adjust mass, SPACE throws.
+// Arrow keys adjust velocity, [ and ] adjust mass, A/D move your landing
+// guess, SPACE throws, R replays the last throw.
 // Run this from build/ (./throw_game), same as throw_sim and beam_sim.
 
 static const float SIM_DT = 0.01f;        // must match ThrowSim.cpp's dt
 static const float PLAYBACK_SPEED = 2.5f; // watch the flight faster than real time
+static const char* STATS_PATH = "../game_stats.txt"; // repo root, survives build/ wipes
 
 static bool runCommand(const std::string& cmd, std::vector<Vector2>& outPoints) {
     FILE* pipe = popen(cmd.c_str(), "r");
@@ -44,6 +48,10 @@ static bool runFinal(const std::string& cmd, float& outX, float& outY) {
     return sscanf(buffer, "%f,%f", &outX, &outY) == 2;
 }
 
+static float randRangeF(float lo, float hi) {
+    return lo + (hi - lo) * (float)GetRandomValue(0, 10000) / 10000.0f;
+}
+
 struct ThrowState {
     float vx0, vy0, mass;
     std::vector<Vector2> realTrajectory;
@@ -69,6 +77,69 @@ static ThrowState runThrow(float vx0, float vy0, float mass) {
 
     s.startTime = GetTime();
     return s;
+}
+
+// --- Persistent stats, saved to a plain text file outside build/ so a
+// build wipe doesn't erase progress ---
+struct GameStats {
+    int totalThrows = 0;
+    float aiErrorSum = 0.0f;
+    float bestError = std::numeric_limits<float>::infinity();
+    float worstError = 0.0f;
+    int streak = 0;
+    int bestStreak = 0;
+    int targetScore = 0;
+    int playerWins = 0;
+    int aiWins = 0;
+};
+
+static GameStats loadStats(const std::string& path) {
+    GameStats s;
+    std::ifstream in(path);
+    if (!in.is_open()) return s;
+    std::string key;
+    while (in >> key) {
+        if (key == "totalThrows") in >> s.totalThrows;
+        else if (key == "aiErrorSum") in >> s.aiErrorSum;
+        else if (key == "bestError") in >> s.bestError;
+        else if (key == "worstError") in >> s.worstError;
+        else if (key == "streak") in >> s.streak;
+        else if (key == "bestStreak") in >> s.bestStreak;
+        else if (key == "targetScore") in >> s.targetScore;
+        else if (key == "playerWins") in >> s.playerWins;
+        else if (key == "aiWins") in >> s.aiWins;
+    }
+    return s;
+}
+
+static void saveStats(const std::string& path, const GameStats& s) {
+    std::ofstream out(path);
+    out << "totalThrows " << s.totalThrows << "\n";
+    out << "aiErrorSum " << s.aiErrorSum << "\n";
+    out << "bestError " << s.bestError << "\n";
+    out << "worstError " << s.worstError << "\n";
+    out << "streak " << s.streak << "\n";
+    out << "bestStreak " << s.bestStreak << "\n";
+    out << "targetScore " << s.targetScore << "\n";
+    out << "playerWins " << s.playerWins << "\n";
+    out << "aiWins " << s.aiWins << "\n";
+}
+
+// --- Simple burst particles for landing impact, unlit, cheap ---
+struct Particle {
+    Vector3 pos, vel;
+    float life, maxLife;
+};
+
+static void spawnBurst(std::vector<Particle>& particles, Vector3 origin) {
+    for (int i = 0; i < 24; i++) {
+        Particle p;
+        p.pos = origin;
+        p.vel = (Vector3){ randRangeF(-6.0f, 6.0f), randRangeF(2.0f, 8.0f), randRangeF(-6.0f, 6.0f) };
+        p.maxLife = randRangeF(0.4f, 0.7f);
+        p.life = p.maxLife;
+        particles.push_back(p);
+    }
 }
 
 // Terrain as a proper lit Model instead of an unlit immediate-mode strip.
@@ -169,16 +240,21 @@ int main() {
     RenderTexture2D sceneTarget = LoadRenderTexture(screenWidth, screenHeight);
 
     float vx = 10.0f, vy = 15.0f, mass = 2.0f;
+    float guessX = 0.0f;
+    float targetX = randRangeF(-50.0f, 250.0f);
     ThrowState state = runThrow(vx, vy, mass);
     bool scored = false;
+    bool wasFlying = true;
 
-    int throwCount = 0;
-    float totalError = 0.0f;
-    float bestError = std::numeric_limits<float>::infinity();
-    float worstError = 0.0f;
-    int streak = 0; // consecutive throws under 1 unit of error
+    GameStats stats = loadStats(STATS_PATH);
+    float lastPlayerError = 0.0f;
+    bool lastPlayerWon = false;
+    int lastRoundScore = 0;
 
     std::vector<Vector3> realTrail, predTrail;
+    std::vector<Particle> particles;
+    float shakeTimer = 0.0f;
+    const float shakeDuration = 0.25f;
 
     Vector3 followTarget = { 0.0f, 1.0f, 0.0f };
     float orbitYaw = 0.0f;
@@ -192,20 +268,29 @@ int main() {
         float animT = realDuration > 0.0f ? Clamp(elapsed / realDuration, 0.0f, 1.0f) : 1.0f;
         bool animDone = animT >= 1.0f;
         bool flying = !animDone;
+        float dt = GetFrameTime();
 
-        // Adjust throw parameters only between throws
+        // Adjust throw parameters and guess only between throws
         if (animDone) {
-            float dt = GetFrameTime();
             if (IsKeyDown(KEY_RIGHT)) vx = Clamp(vx + 10.0f * dt, VX_MIN, VX_MAX);
             if (IsKeyDown(KEY_LEFT)) vx = Clamp(vx - 10.0f * dt, VX_MIN, VX_MAX);
             if (IsKeyDown(KEY_UP)) vy = Clamp(vy + 10.0f * dt, VY_MIN, VY_MAX);
             if (IsKeyDown(KEY_DOWN)) vy = Clamp(vy - 10.0f * dt, VY_MIN, VY_MAX);
             if (IsKeyDown(KEY_RIGHT_BRACKET)) mass = Clamp(mass + 2.0f * dt, MASS_MIN, MASS_MAX);
             if (IsKeyDown(KEY_LEFT_BRACKET)) mass = Clamp(mass - 2.0f * dt, MASS_MIN, MASS_MAX);
+            if (IsKeyDown(KEY_D)) guessX += 30.0f * dt;
+            if (IsKeyDown(KEY_A)) guessX -= 30.0f * dt;
 
             if (IsKeyPressed(KEY_SPACE)) {
                 state = runThrow(vx, vy, mass);
+                targetX = randRangeF(-50.0f, 250.0f);
                 scored = false;
+                realTrail.clear();
+                predTrail.clear();
+            } else if (IsKeyPressed(KEY_R)) {
+                // Replay the same throw's cached trajectory, no new
+                // subprocess calls and no re-scoring (already counted).
+                state.startTime = GetTime();
                 realTrail.clear();
                 predTrail.clear();
             }
@@ -232,17 +317,47 @@ int main() {
             if (state.havePred) predTrail.push_back({ predPos.x, predPos.y + 1.0f, 0.0f });
         }
 
-        if (animDone && !scored && state.haveReal && state.havePred) {
-            float dx = state.realTrajectory.back().x - state.predX;
-            float dy = state.realTrajectory.back().y - state.predY;
-            float error = sqrtf(dx * dx + dy * dy);
-            throwCount++;
-            totalError += error;
-            if (error < bestError) bestError = error;
-            if (error > worstError) worstError = error;
-            streak = (error < 1.0f) ? streak + 1 : 0;
-            scored = true;
+        // Landing edge: just transitioned from flying to landed this frame
+        if (wasFlying && !flying && state.haveReal) {
+            spawnBurst(particles, (Vector3){ realPos.x, realPos.y + 1.0f, 0.0f });
+            shakeTimer = shakeDuration;
         }
+        wasFlying = flying;
+
+        if (animDone && !scored && state.haveReal && state.havePred) {
+            float realX = state.realTrajectory.back().x;
+            float realY = state.realTrajectory.back().y;
+            float dx = realX - state.predX;
+            float dy = realY - state.predY;
+            float aiError = sqrtf(dx * dx + dy * dy);
+
+            stats.totalThrows++;
+            stats.aiErrorSum += aiError;
+            if (aiError < stats.bestError) stats.bestError = aiError;
+            if (aiError > stats.worstError) stats.worstError = aiError;
+            stats.streak = (aiError < 1.0f) ? stats.streak + 1 : 0;
+            if (stats.streak > stats.bestStreak) stats.bestStreak = stats.streak;
+
+            lastPlayerError = fabsf(realX - guessX);
+            lastPlayerWon = lastPlayerError < aiError;
+            if (lastPlayerWon) stats.playerWins++; else stats.aiWins++;
+
+            lastRoundScore = (int)fmaxf(0.0f, 100.0f - fabsf(realX - targetX));
+            stats.targetScore += lastRoundScore;
+
+            scored = true;
+            saveStats(STATS_PATH, stats);
+        }
+
+        // Update particles
+        for (auto& p : particles) {
+            p.vel.y -= 9.8f * dt;
+            p.pos = Vector3Add(p.pos, Vector3Scale(p.vel, dt));
+            p.life -= dt;
+        }
+        particles.erase(
+            std::remove_if(particles.begin(), particles.end(), [](const Particle& p) { return p.life <= 0.0f; }),
+            particles.end());
 
         // Camera follows the real ball while it's flying, otherwise settles
         // over the landing spot. Manual orbit instead of raylib's built-in
@@ -252,7 +367,7 @@ int main() {
             : (Vector3){ state.haveReal ? state.realTrajectory.back().x : 0.0f,
                          state.haveReal ? state.realTrajectory.back().y : 1.0f, 0.0f };
         followTarget = Vector3Lerp(followTarget, desiredTarget, 0.08f);
-        orbitYaw += 0.15f * GetFrameTime();
+        orbitYaw += 0.15f * dt;
 
         Camera camera = { 0 };
         camera.target = followTarget;
@@ -261,6 +376,15 @@ int main() {
             followTarget.y + orbitHeight,
             followTarget.z + orbitRadius * sinf(orbitYaw)
         };
+
+        if (shakeTimer > 0.0f) {
+            float t = shakeTimer / shakeDuration;
+            camera.position.x += randRangeF(-0.6f, 0.6f) * t;
+            camera.position.y += randRangeF(-0.6f, 0.6f) * t;
+            camera.position.z += randRangeF(-0.6f, 0.6f) * t;
+            shakeTimer -= dt;
+        }
+
         camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
         camera.fovy = 45.0f;
         camera.projection = CAMERA_PERSPECTIVE;
@@ -277,6 +401,18 @@ int main() {
         BeginMode3D(camera);
 
         DrawModel(terrainModel, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
+
+        // Player's guess marker (sky blue disc on the ground)
+        {
+            float gY = terrainHeight(guessX);
+            DrawCylinder((Vector3){ guessX, gY + 0.05f, 0.0f }, 0.8f, 0.8f, 0.08f, 16, Fade(SKYBLUE, 0.85f));
+        }
+        // Target marker (magenta flag)
+        {
+            float tY = terrainHeight(targetX);
+            DrawCylinder((Vector3){ targetX, tY, 0.0f }, 0.05f, 0.05f, 4.0f, 8, MAGENTA);
+            DrawSphere((Vector3){ targetX, tY + 4.0f, 0.0f }, 0.5f, MAGENTA);
+        }
 
         for (size_t i = 1; i < realTrail.size(); i++) {
             DrawLine3D(realTrail[i - 1], realTrail[i], MAROON);
@@ -309,10 +445,14 @@ int main() {
                        (Vector3){ state.predX, state.predY + 1.0f, 0.0f }, WHITE);
         }
 
+        for (const auto& p : particles) {
+            DrawSphere(p.pos, 0.12f, Fade(GOLD, p.life / p.maxLife));
+        }
+
         EndMode3D();
 
         if (animDone) {
-            DrawText(TextFormat("Throw: vx=%.1f vy=%.1f mass=%.1f  (arrows to adjust, [ ] for mass)", vx, vy, mass), 10, 10, 20, BLACK);
+            DrawText(TextFormat("Throw: vx=%.1f vy=%.1f mass=%.1f  (arrows/[ ] adjust, A/D move guess)", vx, vy, mass), 10, 10, 20, BLACK);
         } else {
             DrawText(TextFormat("In flight: vx=%.1f vy=%.1f mass=%.1f", state.vx0, state.vy0, state.mass), 10, 10, 20, BLACK);
         }
@@ -331,19 +471,24 @@ int main() {
         if (animDone && state.haveReal && state.havePred) {
             float dx = state.realTrajectory.back().x - state.predX;
             float dy = state.realTrajectory.back().y - state.predY;
-            float error = sqrtf(dx * dx + dy * dy);
-            DrawText(TextFormat("AI error: %.3f units", error), 10, 90, 20, DARKPURPLE);
+            float aiError = sqrtf(dx * dx + dy * dy);
+            DrawText(TextFormat("AI error: %.3f units   Your guess error: %.3f   %s   +%d target pts",
+                                 aiError, lastPlayerError, lastPlayerWon ? "YOU WIN" : "AI WINS", lastRoundScore),
+                      10, 90, 20, lastPlayerWon ? DARKGREEN : DARKPURPLE);
         } else if (!animDone) {
             DrawText("In flight...", 10, 90, 20, GRAY);
         }
 
-        if (throwCount > 0) {
-            DrawText(TextFormat("Throws: %d   Avg error: %.3f   Best: %.3f   Worst: %.3f   Streak (<1.0): %d",
-                                 throwCount, totalError / throwCount, bestError, worstError, streak),
+        if (stats.totalThrows > 0) {
+            DrawText(TextFormat("Throws: %d   AI avg err: %.3f   Best: %.3f   Streak: %d (best %d)",
+                                 stats.totalThrows, stats.aiErrorSum / stats.totalThrows, stats.bestError, stats.streak, stats.bestStreak),
                       10, 120, 18, DARKGRAY);
+            DrawText(TextFormat("You vs AI: %d - %d   Target score: %d",
+                                 stats.playerWins, stats.aiWins, stats.targetScore),
+                      10, 145, 18, DARKGRAY);
         }
 
-        DrawText("SPACE to throw", 10, screenHeight - 30, 20, GRAY);
+        DrawText("SPACE throw | R replay | blue disc = your guess | magenta flag = target", 10, screenHeight - 30, 18, GRAY);
 
         EndTextureMode();
 

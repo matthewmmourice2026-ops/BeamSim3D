@@ -4,19 +4,28 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 
+from features import add_engineered_features
 from models.ImprovedNeuralNetwork import ImprovedNeuralNetwork
 
 # 5-fold cross validation. This is for reporting a more honest accuracy
 # number, not for producing the weights main.py saves for actual use.
+# Mirrors main.py's training setup (MPS, engineered feature, mini-batches,
+# Huber loss, weight decay, LR scheduler) so the numbers are comparable.
+
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+print(f"Training on: {device}")
 
 df = pd.read_csv("build/throw_results.csv")
-inputs = torch.tensor(df[["vx0", "vy0", "mass"]].values, dtype=torch.float32)
-targets = torch.tensor(df[["final_x", "final_y", "maxHeight"]].values, dtype=torch.float32)
+inputs = torch.tensor(df[["vx0", "vy0", "mass"]].values, dtype=torch.float32).to(device)
+targets = torch.tensor(df[["final_x", "final_y", "maxHeight"]].values, dtype=torch.float32).to(device)
+inputs = add_engineered_features(inputs)
 
 k = 5
-epochs = 5000
+epochs = 50000
 patience = 50
+batch_size = 2048
 
 torch.manual_seed(42)
 n = inputs.shape[0]
@@ -38,24 +47,30 @@ for fold in range(k):
     train_inputs = (train_inputs - input_mean) / input_std
     val_inputs = (val_inputs - input_mean) / input_std
 
-    model = ImprovedNeuralNetwork()
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    train_loader = DataLoader(TensorDataset(train_inputs, train_targets), batch_size=batch_size, shuffle=True)
+
+    model = ImprovedNeuralNetwork().to(device)
+    criterion = nn.HuberLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.69, patience=35)
 
     best_val_loss = float("inf")
     epochs_no_improve = 0
 
     for epoch in range(epochs):
         model.train()
-        optimizer.zero_grad()
-        outputs = model(train_inputs)
-        loss = criterion(outputs, train_targets)
-        loss.backward()
-        optimizer.step()
+        for batch_inputs, batch_targets in train_loader:
+            optimizer.zero_grad()
+            outputs = model(batch_inputs)
+            loss = criterion(outputs, batch_targets)
+            loss.backward()
+            optimizer.step()
 
         model.eval()
         with torch.no_grad():
             val_loss = criterion(model(val_inputs), val_targets)
+
+        scheduler.step(val_loss.item())
 
         if val_loss.item() < best_val_loss:
             best_val_loss = val_loss.item()

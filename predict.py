@@ -3,6 +3,7 @@ import sys
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from features import add_engineered_features
 from models.ImprovedNeuralNetwork import ImprovedNeuralNetwork
 
 if __name__ == "__main__":
@@ -26,6 +27,7 @@ if __name__ == "__main__":
     model.eval()
 
     x = torch.tensor([[vx0, vy0, mass]], dtype=torch.float32)
+    x = add_engineered_features(x)
     x = (x - checkpoint["input_mean"]) / checkpoint["input_std"]
     with torch.no_grad():
         predictions = model(x)

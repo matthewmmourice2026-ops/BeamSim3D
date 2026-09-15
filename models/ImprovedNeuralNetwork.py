@@ -6,38 +6,49 @@ class ImprovedNeuralNetwork(nn.Module):
     def __init__(self):
         super(ImprovedNeuralNetwork, self).__init__()
         
-        # Input layer to hidden layer
-        self.fc1 = nn.Linear(3, 250)
+        # Input layer to hidden layer (3 raw inputs + 1 engineered feature,
+        # see features.py)
+        self.fc1 = nn.Linear(4, 250)
         self.bn1 = nn.BatchNorm1d(250)  # Batch Normalization
-        self.dropout1 = nn.Dropout(0.0001)  # Dropout to reduce overfitting
+        self.dropout1 = nn.Dropout(0.0000000001)  # Dropout to reduce overfitting
         
         # Hidden layer 1 to hidden layer 2
         self.fc2 = nn.Linear(250, 250)
         self.bn2 = nn.BatchNorm1d(250)
-        self.dropout2 = nn.Dropout(0.00001)
+        self.dropout2 = nn.Dropout(0.0000000001)
 
         # Hidden layer 2 to hidden layer 3
         self.fc3 = nn.Linear(250, 250)
         self.bn3 = nn.BatchNorm1d(250)  # Batch Normalization
-        self.dropout3 = nn.Dropout(0.00001)
+        self.dropout3 = nn.Dropout(0.0000000001)
 
         # Hidden layer 3 to hidden layer 4
         self.fc4 = nn.Linear(250, 300)
         self.bn4 = nn.BatchNorm1d(300)
-        self.dropout4 = nn.Dropout(0.00001)
+        self.dropout4 = nn.Dropout(0.0000000001)
 
         # Hidden layer 4 to hidden layer 5
         self.fc5 = nn.Linear(300, 450)
         self.bn5 = nn.BatchNorm1d(450)
-        self.dropout5 = nn.Dropout(0.00001)
+        self.dropout5 = nn.Dropout(0.0000000001)
 
         # Hidden layer 5 to hidden layer 6
         self.fc6 = nn.Linear(450, 600)
         self.bn6 = nn.BatchNorm1d(600)
-        self.dropout6 = nn.Dropout(0.00001)
+        self.dropout6 = nn.Dropout(0.0000000001)
 
-        # Hidden layer 6 to output layer
-        self.fc7 = nn.Linear(600, 3)
+        # Hidden layer 6 to hidden layer 7
+        self.fc7 = nn.Linear(600, 1200)
+        self.bn7 = nn.BatchNorm1d(1200)
+        self.dropout7 = nn.Dropout(0.0000000001)
+
+        # Hidden layer 7 to hidden layer 8
+        self.fc8 = nn.Linear(1200, 2000)
+        self.bn8 = nn.BatchNorm1d(2000)
+        self.dropout8 = nn.Dropout(0.0000000001)
+
+        # Hidden layer 8 to output layer
+        self.fc9 = nn.Linear(2000, 3)
 
     def forward(self, x):
         # Apply ReLU activation and batch normalization to the first layer
@@ -75,18 +86,35 @@ class ImprovedNeuralNetwork(nn.Module):
         x = nn.functional.relu(x)
         x = self.bn6(x)
         x = self.dropout6(x)
-        
-        # Output layer
+
+        # Apply ReLU activation and batch normalization to the seventh layer
         x = self.fc7(x)
+        x = nn.functional.relu(x)
+        x = self.bn7(x)
+        x = self.dropout7(x)
+        
+        # Apply ReLU activation and batch normalization to the eighth layer
+        x = self.fc8(x)
+        x = nn.functional.relu(x)
+        x = self.bn8(x)
+        x = self.dropout8(x)
+
+        # Output layer
+        x = self.fc9(x)
         return x
 
 if __name__ == "__main__":
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from features import add_engineered_features
+
     net = ImprovedNeuralNetwork()
     print(net)
 
     # Dummy input to see the output
     net.eval()
-    input_tensor = torch.tensor([[1.0, 2.0, 3.0]])
+    input_tensor = add_engineered_features(torch.tensor([[1.0, 2.0, 3.0]]))
     with torch.no_grad():
         output = net(input_tensor)
     print(output)

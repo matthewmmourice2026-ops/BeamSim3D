@@ -3,6 +3,7 @@ import subprocess
 
 import torch
 
+from features import add_engineered_features
 from models.ImprovedNeuralNetwork import ImprovedNeuralNetwork
 
 THROW_SIM = "build/throw_sim"
@@ -27,6 +28,7 @@ def load_model():
 
 def predict(model, input_mean, input_std, vx0, vy0, mass):
     x = torch.tensor([[vx0, vy0, mass]], dtype=torch.float32)
+    x = add_engineered_features(x)
     x = (x - input_mean) / input_std
     with torch.no_grad():
         y = model(x)

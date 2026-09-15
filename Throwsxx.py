@@ -6,6 +6,7 @@ import random
 # Add the project root directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from features import add_engineered_features
 from models.ImprovedNeuralNetwork import ImprovedNeuralNetwork
 
 # 1. Load the trained model + input normalization stats
@@ -36,6 +37,7 @@ new_throw = [velocity_x, velocity_y, mass]
 
 # Normalize the input data
 x_test = torch.tensor([new_throw], dtype=torch.float32)
+x_test = add_engineered_features(x_test)
 x_test = (x_test - input_mean) / input_std
 
 # 3. Make the Prediction
