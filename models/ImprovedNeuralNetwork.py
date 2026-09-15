@@ -48,7 +48,9 @@ class ImprovedNeuralNetwork(nn.Module):
         self.dropout8 = nn.Dropout(0.0000000001)
 
         # Hidden layer 8 to output layer
-        self.fc9 = nn.Linear(2000, 3)
+        # 7 outputs: final_x, final_y, maxHeight, timeToLand, bounceCount,
+        # apexTime, finalVx
+        self.fc9 = nn.Linear(2000, 7)
 
     def forward(self, x):
         # Apply ReLU activation and batch normalization to the first layer

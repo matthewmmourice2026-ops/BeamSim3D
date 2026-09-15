@@ -14,8 +14,8 @@ def ground_truth(vx0, vy0, mass):
         [THROW_SIM, str(vx0), str(vy0), str(mass)],
         capture_output=True, text=True, check=True,
     )
-    final_x, final_y, max_height = result.stdout.strip().split(",")
-    return float(final_x), float(final_y), float(max_height)
+    values = result.stdout.strip().split(",")
+    return tuple(float(v) for v in values)
 
 
 def load_model():
@@ -32,7 +32,7 @@ def predict(model, input_mean, input_std, vx0, vy0, mass):
     x = (x - input_mean) / input_std
     with torch.no_grad():
         y = model(x)
-    return y[0, 0].item(), y[0, 1].item(), y[0, 2].item()
+    return tuple(y[0, i].item() for i in range(y.shape[1]))
 
 
 if __name__ == "__main__":
@@ -51,20 +51,38 @@ if __name__ == "__main__":
 
     model, input_mean, input_std = load_model()
 
+    # Output order: final_x, final_y, maxHeight, timeToLand, bounceCount,
+    # apexTime, finalVx. Full per-row table for the first 3 (readable at
+    # 7 columns), aggregate-only MAE for the other 4 (21 columns of
+    # per-row detail would be unreadable in a terminal).
     print(f"{'vx0':>7} {'vy0':>7} {'mass':>6} | {'real_x':>9} {'pred_x':>9} {'err_x':>7} | "
           f"{'real_y':>8} {'pred_y':>8} {'err_y':>7} | {'real_h':>8} {'pred_h':>8} {'err_h':>7}")
 
     x_errors, y_errors, h_errors = [], [], []
+    t2l_errors, bounce_errors, apex_errors, vx_errors = [], [], [], []
+
     for vx0, vy0, mass in test_throws:
-        real_x, real_y, real_h = ground_truth(vx0, vy0, mass)
-        pred_x, pred_y, pred_h = predict(model, input_mean, input_std, vx0, vy0, mass)
+        real_x, real_y, real_h, real_t2l, real_bounce, real_apex, real_vx = ground_truth(vx0, vy0, mass)
+        pred_x, pred_y, pred_h, pred_t2l, pred_bounce, pred_apex, pred_vx = predict(model, input_mean, input_std, vx0, vy0, mass)
+
         err_x, err_y, err_h = abs(real_x - pred_x), abs(real_y - pred_y), abs(real_h - pred_h)
         x_errors.append(err_x)
         y_errors.append(err_y)
         h_errors.append(err_h)
 
+        t2l_errors.append(abs(real_t2l - pred_t2l))
+        bounce_errors.append(abs(real_bounce - pred_bounce))
+        apex_errors.append(abs(real_apex - pred_apex))
+        vx_errors.append(abs(real_vx - pred_vx))
+
         print(f"{vx0:7.1f} {vy0:7.1f} {mass:6.1f} | {real_x:9.3f} {pred_x:9.3f} {err_x:7.3f} | "
               f"{real_y:8.3f} {pred_y:8.3f} {err_y:7.3f} | {real_h:8.3f} {pred_h:8.3f} {err_h:7.3f}")
 
-    print(f"\nMean absolute error: x = {sum(x_errors) / len(x_errors):.3f}, "
-          f"y = {sum(y_errors) / len(y_errors):.3f}, max_height = {sum(h_errors) / len(h_errors):.3f}")
+    def mae(errors):
+        return sum(errors) / len(errors)
+
+    print(f"\nMean absolute error: x = {mae(x_errors):.3f}, "
+          f"y = {mae(y_errors):.3f}, max_height = {mae(h_errors):.3f}")
+    print(f"Mean absolute error: timeToLand = {mae(t2l_errors):.3f}, "
+          f"bounceCount = {mae(bounce_errors):.3f}, apexTime = {mae(apex_errors):.3f}, "
+          f"finalVx = {mae(vx_errors):.3f}")

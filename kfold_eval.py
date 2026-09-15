@@ -19,7 +19,7 @@ print(f"Training on: {device}")
 
 df = pd.read_csv("build/throw_results.csv")
 inputs = torch.tensor(df[["vx0", "vy0", "mass"]].values, dtype=torch.float32).to(device)
-targets = torch.tensor(df[["final_x", "final_y", "maxHeight"]].values, dtype=torch.float32).to(device)
+targets = torch.tensor(df[["final_x", "final_y", "maxHeight", "timeToLand", "bounceCount", "apexTime", "finalVx"]].values, dtype=torch.float32).to(device)
 inputs = add_engineered_features(inputs)
 
 k = 5

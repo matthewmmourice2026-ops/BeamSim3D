@@ -44,14 +44,24 @@ x_test = (x_test - input_mean) / input_std
 with torch.no_grad():
     predictions = model(x_test)
 
-# Model returns [landing_x, landing_y, max_height], matching main.py's
-# target column order (final_x, final_y, maxHeight)
+# Model returns [landing_x, landing_y, max_height, time_to_land,
+# bounce_count, apex_time, final_vx], matching main.py's target column
+# order (final_x, final_y, maxHeight, timeToLand, bounceCount, apexTime,
+# finalVx)
 landing_x = predictions[0, 0].item()
 landing_y = predictions[0, 1].item()
 max_height = predictions[0, 2].item()
+time_to_land = predictions[0, 3].item()
+bounce_count = predictions[0, 4].item()
+apex_time = predictions[0, 5].item()
+final_vx = predictions[0, 6].item()
 
 # 4. Print the results
 print("\n--- INFERENCE TEST ---")
 print(f"Starting Parameters (Vel X, Vel Y, Mass): {new_throw}")
 print(f"AI Predicted Landing Coordinates (X, Y): ({landing_x}, {landing_y})")
 print(f"AI Predicted Maximum Height: {max_height}")
+print(f"AI Predicted Time To Land: {time_to_land}")
+print(f"AI Predicted Bounce Count: {bounce_count}")
+print(f"AI Predicted Apex Time: {apex_time}")
+print(f"AI Predicted Final Horizontal Velocity: {final_vx}")

@@ -32,6 +32,9 @@ if __name__ == "__main__":
     with torch.no_grad():
         predictions = model(x)
 
-    landing_x, landing_y, max_height = predictions[0, 0].item(), predictions[0, 1].item(), predictions[0, 2].item()
+    landing_x, landing_y, max_height, time_to_land, bounce_count, apex_time, final_vx = (
+        predictions[0, 0].item(), predictions[0, 1].item(), predictions[0, 2].item(),
+        predictions[0, 3].item(), predictions[0, 4].item(), predictions[0, 5].item(), predictions[0, 6].item(),
+    )
 
-    print(f"{landing_x},{landing_y},{max_height}")
+    print(f"{landing_x},{landing_y},{max_height},{time_to_land},{bounce_count},{apex_time},{final_vx}")

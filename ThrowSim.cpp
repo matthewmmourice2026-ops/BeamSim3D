@@ -11,6 +11,10 @@ struct ThrowResult {
     float vx0, vy0, mass;
     float finalX, finalY;
     float maxHeight;
+    float timeToLand;
+    float bounceCount;
+    float apexTime;
+    float finalVx;
 };
 
 struct TrajectoryPoint {
@@ -26,6 +30,9 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
     const float restEps = 0.05f;
     const int maxSteps = 5000;
     float maxHeight = 0.0f;  // Starting height at x=0
+    float apexTime = 0.0f;
+    int bounceCount = 0;
+    float timeToLand = maxSteps * dt; // default if it never fully settles
     float x = 0.0f, y = 1.0f;
     float vx = vx0, vy = vy0;
 
@@ -44,6 +51,14 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
 
         float ground = terrainHeight(x);
         if (y <= ground) {
+            // Only count a real impact, not the constant near-zero
+            // re-triggers of this branch every frame once it's resting
+            // on the ground (gravity keeps nudging y a hair below ground
+            // each frame, which would otherwise inflate the count into
+            // the hundreds).
+            if (std::fabs(vy) > 0.5f) {
+                bounceCount++;
+            }
             y = ground;
             vy = -vy * restitution;
             vx *= groundFriction;
@@ -54,6 +69,7 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
 
         if (y > maxHeight) {
             maxHeight = y;
+            apexTime = (step + 1) * dt;
         }
 
         if (trajectory) {
@@ -61,11 +77,12 @@ static ThrowResult simulateThrow(float vx0, float vy0, float mass, std::vector<T
         }
 
         if (y == ground && std::fabs(vy) < restEps && std::fabs(vx) < restEps) {
+            timeToLand = (step + 1) * dt;
             break;
         }
     }
 
-    return { vx0, vy0, mass, x, y, maxHeight };
+    return { vx0, vy0, mass, x, y, maxHeight, timeToLand, (float)bounceCount, apexTime, vx };
 }
 
 int main(int argc, char** argv) {
@@ -77,7 +94,9 @@ int main(int argc, char** argv) {
         float vy0 = std::stof(argv[2]);
         float mass = std::stof(argv[3]);
         ThrowResult r = simulateThrow(vx0, vy0, mass);
-        std::cout << r.finalX << "," << r.finalY << "," << r.maxHeight << std::endl;
+        std::cout << r.finalX << "," << r.finalY << "," << r.maxHeight << ","
+                   << r.timeToLand << "," << r.bounceCount << "," << r.apexTime << "," << r.finalVx
+                   << std::endl;
         return 0;
     }
 
@@ -106,7 +125,7 @@ int main(int argc, char** argv) {
     std::uniform_real_distribution<float> heightDist(0.0f, 0.0f); // For starting height at x=0   
 
     std::ofstream out("throw_results.csv");
-    out << "vx0,vy0,mass,final_x,final_y,maxHeight\n";
+    out << "vx0,vy0,mass,final_x,final_y,maxHeight,timeToLand,bounceCount,apexTime,finalVx\n";
 
     for (int i = 0; i < throwCount; ++i) {
         float vx0 = vxDist(gen);
@@ -115,7 +134,8 @@ int main(int argc, char** argv) {
         ThrowResult r = simulateThrow(vx0, vy0, mass);
 
         out << r.vx0 << "," << r.vy0 << "," << r.mass << ","
-            << r.finalX << "," << r.finalY << "," << r.maxHeight << "\n";
+            << r.finalX << "," << r.finalY << "," << r.maxHeight << ","
+            << r.timeToLand << "," << r.bounceCount << "," << r.apexTime << "," << r.finalVx << "\n";
     }
 
     out.close();
