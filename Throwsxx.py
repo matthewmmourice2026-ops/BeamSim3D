@@ -1,3 +1,4 @@
+import math
 import sys
 import os
 import torch
@@ -57,6 +58,8 @@ time_to_land = predictions[0, 3].item()
 bounce_count = predictions[0, 4].item()
 apex_time = predictions[0, 5].item()
 final_vx = predictions[0, 6].item()
+log_var = predictions[0, 7].item()
+uncertainty_std = math.exp(0.5 * log_var)
 
 # 4. Print the results
 print("\n--- INFERENCE TEST ---")
@@ -67,3 +70,4 @@ print(f"AI Predicted Time To Land: {time_to_land}")
 print(f"AI Predicted Bounce Count: {bounce_count}")
 print(f"AI Predicted Apex Time: {apex_time}")
 print(f"AI Predicted Final Horizontal Velocity: {final_vx}")
+print(f"AI Predicted Uncertainty: +/-{uncertainty_std:.3f} units (68% confidence)")

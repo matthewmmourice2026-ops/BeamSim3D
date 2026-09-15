@@ -51,9 +51,26 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 model = ImprovedNeuralNetwork().to(device)
 # Huber loss instead of MSE: quadratic near zero but linear for large
 # errors, so a handful of extreme throws (large vx/vy/mass combos) don't
-# dominate the gradient the way squared error would.
+# dominate the gradient the way squared error would. Trains outputs[:, :7]
+# only - the 8th output (uncertainty) has no ground-truth column, it's
+# trained separately below.
 criterion = nn.HuberLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+
+
+def uncertainty_loss(outputs, targets):
+    """Heteroscedastic uncertainty (Gaussian NLL): trains outputs[:, 7]
+    (a log-variance) to predict the model's own landing-position error.
+    The point-estimate outputs (x, y) are detached here so this loss only
+    trains the uncertainty head - it doesn't also push back on x/y, which
+    are already being trained by the Huber loss above. Low log-variance
+    is only "safe" when the actual error is small (the 0.5*exp(-log_var)*
+    error^2 term blows up otherwise), and the 0.5*log_var term keeps it
+    from just predicting huge variance for everything to play it safe.
+    """
+    xy_error_sq = (outputs[:, 0].detach() - targets[:, 0]) ** 2 + (outputs[:, 1].detach() - targets[:, 1]) ** 2
+    log_var = outputs[:, 7]
+    return (0.5 * torch.exp(-log_var) * xy_error_sq + 0.5 * log_var).mean()
 
 # Drops LR by 10x when val loss stalls, so late-stage training can settle
 # instead of oscillating around a coarse fixed step size. Scheduler
@@ -63,7 +80,7 @@ scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0
 
 # Train, with early stopping on val loss
 epochs = 50000
-patience = 100
+patience = 150
 best_val_loss = float("inf")
 best_state = None
 epochs_no_improve = 0
@@ -78,17 +95,19 @@ for epoch in range(epochs):
     for batch_inputs, batch_targets in train_loader:
         optimizer.zero_grad()
         outputs = model(batch_inputs)
-        loss = criterion(outputs, batch_targets)
+        main_loss = criterion(outputs[:, :7], batch_targets)
+        loss = main_loss + uncertainty_loss(outputs, batch_targets)
         loss.backward()
         optimizer.step()
-        epoch_loss_sum += loss.detach() * batch_inputs.size(0)
+        epoch_loss_sum += main_loss.detach() * batch_inputs.size(0)
         epoch_sample_count += batch_inputs.size(0)
     train_loss = (epoch_loss_sum / epoch_sample_count).item()
 
     model.eval()
     with torch.no_grad():
         val_outputs = model(val_inputs)
-        val_loss = criterion(val_outputs, val_targets)
+        val_loss = criterion(val_outputs[:, :7], val_targets)
+        val_unc_loss = uncertainty_loss(val_outputs, val_targets)
 
     prev_lr = optimizer.param_groups[0]["lr"]
     scheduler.step(val_loss.item())
@@ -97,7 +116,8 @@ for epoch in range(epochs):
         print(f"Epoch {epoch + 1}: learning rate reduced {prev_lr:.6f} -> {new_lr:.6f}")
 
     if (epoch + 1) % 20 == 0:
-        print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss.item():.4f}")
+        print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss.item():.4f}, "
+              f"Uncertainty Loss: {val_unc_loss.item():.4f}")
 
     if val_loss.item() < best_val_loss:
         best_val_loss = val_loss.item()
@@ -119,8 +139,10 @@ print(f"Best val loss: {best_val_loss:.4f}")
 model.eval()
 with torch.no_grad():
     test_outputs = model(test_inputs)
-    test_loss = criterion(test_outputs, test_targets)
+    test_loss = criterion(test_outputs[:, :7], test_targets)
+    test_unc_loss = uncertainty_loss(test_outputs, test_targets)
 print(f"Test loss (held out, never used during training): {test_loss.item():.4f}")
+print(f"Test uncertainty loss: {test_unc_loss.item():.4f}")
 
 # Save as CPU tensors so the checkpoint loads fine on any machine,
 # regardless of whether it has MPS/CUDA available.

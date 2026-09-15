@@ -1,3 +1,4 @@
+import math
 import random
 import subprocess
 
@@ -61,10 +62,11 @@ if __name__ == "__main__":
 
     x_errors, y_errors, h_errors = [], [], []
     t2l_errors, bounce_errors, apex_errors, vx_errors = [], [], [], []
+    landing_errors, predicted_stds = [], []
 
     for vx0, vy0, mass, height0, wind_accel in test_throws:
         real_x, real_y, real_h, real_t2l, real_bounce, real_apex, real_vx = ground_truth(vx0, vy0, mass, height0, wind_accel)
-        pred_x, pred_y, pred_h, pred_t2l, pred_bounce, pred_apex, pred_vx = predict(model, input_mean, input_std, vx0, vy0, mass, height0, wind_accel)
+        pred_x, pred_y, pred_h, pred_t2l, pred_bounce, pred_apex, pred_vx, pred_log_var = predict(model, input_mean, input_std, vx0, vy0, mass, height0, wind_accel)
 
         err_x, err_y, err_h = abs(real_x - pred_x), abs(real_y - pred_y), abs(real_h - pred_h)
         x_errors.append(err_x)
@@ -76,14 +78,40 @@ if __name__ == "__main__":
         apex_errors.append(abs(real_apex - pred_apex))
         vx_errors.append(abs(real_vx - pred_vx))
 
+        # Actual landing-position error vs. the model's own predicted
+        # uncertainty for that same throw - there's no ground-truth
+        # "uncertainty" column to MAE against (uncertainty isn't a
+        # physical quantity), so this pair is what gets checked for
+        # calibration below instead.
+        landing_errors.append(math.sqrt(err_x ** 2 + err_y ** 2))
+        predicted_stds.append(math.exp(0.5 * pred_log_var))
+
         print(f"{vx0:7.1f} {vy0:7.1f} {mass:6.1f} {height0:6.1f} {wind_accel:6.1f} | {real_x:9.3f} {pred_x:9.3f} {err_x:7.3f} | "
               f"{real_y:8.3f} {pred_y:8.3f} {err_y:7.3f} | {real_h:8.3f} {pred_h:8.3f} {err_h:7.3f}")
 
     def mae(errors):
         return sum(errors) / len(errors)
 
+    def pearson_corr(xs, ys):
+        n = len(xs)
+        mean_x, mean_y = sum(xs) / n, sum(ys) / n
+        cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+        var_x = sum((x - mean_x) ** 2 for x in xs)
+        var_y = sum((y - mean_y) ** 2 for y in ys)
+        if var_x == 0 or var_y == 0:
+            return 0.0
+        return cov / math.sqrt(var_x * var_y)
+
     print(f"\nMean absolute error: x = {mae(x_errors):.3f}, "
           f"y = {mae(y_errors):.3f}, max_height = {mae(h_errors):.3f}")
     print(f"Mean absolute error: timeToLand = {mae(t2l_errors):.3f}, "
           f"bounceCount = {mae(bounce_errors):.3f}, apexTime = {mae(apex_errors):.3f}, "
           f"finalVx = {mae(vx_errors):.3f}")
+
+    # Calibration check for the uncertainty head: does predicted
+    # uncertainty actually track actual landing error? Correlation near
+    # +1 = well calibrated (confident when it should be, unsure when it
+    # should be). Near 0 = the uncertainty head learned nothing useful.
+    corr = pearson_corr(landing_errors, predicted_stds)
+    print(f"\nUncertainty calibration: mean actual landing error = {mae(landing_errors):.3f}, "
+          f"mean predicted std = {mae(predicted_stds):.3f}, correlation = {corr:.3f}")

@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import torch
@@ -34,9 +35,15 @@ if __name__ == "__main__":
     with torch.no_grad():
         predictions = model(x)
 
-    landing_x, landing_y, max_height, time_to_land, bounce_count, apex_time, final_vx = (
+    landing_x, landing_y, max_height, time_to_land, bounce_count, apex_time, final_vx, log_var = (
         predictions[0, 0].item(), predictions[0, 1].item(), predictions[0, 2].item(),
         predictions[0, 3].item(), predictions[0, 4].item(), predictions[0, 5].item(), predictions[0, 6].item(),
+        predictions[0, 7].item(),
     )
+    # Predicted std dev of landing-position error, same units as x/y.
+    # 1 std = 68% confidence interval under the Gaussian assumption the
+    # uncertainty loss trains with - a real statistical fact, not a made-up
+    # percentage.
+    uncertainty_std = math.exp(0.5 * log_var)
 
-    print(f"{landing_x},{landing_y},{max_height},{time_to_land},{bounce_count},{apex_time},{final_vx}")
+    print(f"{landing_x},{landing_y},{max_height},{time_to_land},{bounce_count},{apex_time},{final_vx},{uncertainty_std}")

@@ -24,8 +24,17 @@ inputs = add_engineered_features(inputs)
 
 k = 5
 epochs = 50000
-patience = 100
+patience = 150
 batch_size = 2048
+
+
+def uncertainty_loss(outputs, targets):
+    """Same as main.py's - trains outputs[:, 7] (log-variance) to predict
+    the model's own landing-position error, detached from the point
+    estimate so it doesn't interfere with the main Huber loss."""
+    xy_error_sq = (outputs[:, 0].detach() - targets[:, 0]) ** 2 + (outputs[:, 1].detach() - targets[:, 1]) ** 2
+    log_var = outputs[:, 7]
+    return (0.5 * torch.exp(-log_var) * xy_error_sq + 0.5 * log_var).mean()
 
 torch.manual_seed(42)
 n = inputs.shape[0]
@@ -62,13 +71,15 @@ for fold in range(k):
         for batch_inputs, batch_targets in train_loader:
             optimizer.zero_grad()
             outputs = model(batch_inputs)
-            loss = criterion(outputs, batch_targets)
+            main_loss = criterion(outputs[:, :7], batch_targets)
+            loss = main_loss + uncertainty_loss(outputs, batch_targets)
             loss.backward()
             optimizer.step()
 
         model.eval()
         with torch.no_grad():
-            val_loss = criterion(model(val_inputs), val_targets)
+            val_outputs = model(val_inputs)
+            val_loss = criterion(val_outputs[:, :7], val_targets)
 
         scheduler.step(val_loss.item())
 

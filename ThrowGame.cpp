@@ -36,7 +36,12 @@ static bool runCommand(const std::string& cmd, std::vector<Vector2>& outPoints) 
     return status == 0 && !outPoints.empty();
 }
 
-static bool runFinal(const std::string& cmd, float& outX, float& outY) {
+// predict.py prints exactly 8 comma-separated floats in a fixed order:
+// x, y, maxHeight, timeToLand, bounceCount, apexTime, finalVx, uncertainty
+// (predicted std dev of landing-position error). Only x, y, and
+// uncertainty matter here, the rest are skipped with %*f rather than
+// guessed at with a partial-match trick.
+static bool runFinal(const std::string& cmd, float& outX, float& outY, float& outUncertainty) {
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return false;
 
@@ -45,7 +50,7 @@ static bool runFinal(const std::string& cmd, float& outX, float& outY) {
     int status = pclose(pipe);
 
     if (!gotLine || status != 0) return false;
-    return sscanf(buffer, "%f,%f", &outX, &outY) == 2;
+    return sscanf(buffer, "%f,%f,%*f,%*f,%*f,%*f,%*f,%f", &outX, &outY, &outUncertainty) == 3;
 }
 
 static float randRangeF(float lo, float hi) {
@@ -68,7 +73,7 @@ struct ThrowState {
     float vx0, vy0, mass, height0, windAccel;
     std::vector<Vector2> realTrajectory;
     bool haveReal;
-    float predX, predY;
+    float predX, predY, predUncertainty;
     bool havePred;
     double startTime;
 };
@@ -87,7 +92,7 @@ static ThrowState runThrow(float vx0, float vy0, float mass, float height0, floa
                            std::to_string(height0) + " " + std::to_string(windAccel);
 
     s.haveReal = runCommand("./throw_sim --trajectory " + argsStr, s.realTrajectory);
-    s.havePred = runFinal("python3 ../predict.py " + argsStr, s.predX, s.predY);
+    s.havePred = runFinal("python3 ../predict.py " + argsStr, s.predX, s.predY, s.predUncertainty);
 
     s.startTime = GetTime();
     return s;
@@ -475,7 +480,7 @@ int main() {
         EndMode3D();
 
         // --- Top HUD panel: throw params, real/AI landing, headline result ---
-        int panelW = 430;
+        int panelW = 470;
         int panelH = (animDone && state.haveReal && state.havePred) ? 178 : 148;
         DrawPanel(8, 8, panelW, panelH);
 
@@ -501,7 +506,7 @@ int main() {
         lineY += 22;
 
         if (state.havePred) {
-            DrawTextOutlined(TextFormat("AI predicted:  x=%.2f  y=%.2f", state.predX, state.predY), 18, lineY, 17, GOLD);
+            DrawTextOutlined(TextFormat("AI predicted:  x=%.2f  y=%.2f  (+/-%.2f, 68%% confident)", state.predX, state.predY, state.predUncertainty), 18, lineY, 17, GOLD);
         } else {
             DrawTextOutlined("AI prediction: predict.py call failed (need venv with torch active)", 18, lineY, 17, GOLD);
         }

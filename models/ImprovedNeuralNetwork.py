@@ -47,10 +47,18 @@ class ImprovedNeuralNetwork(nn.Module):
         self.bn8 = nn.BatchNorm1d(2000)
         self.dropout8 = nn.Dropout(0.0000000001)
 
-        # Hidden layer 8 to output layer
-        # 7 outputs: final_x, final_y, maxHeight, timeToLand, bounceCount,
-        # apexTime, finalVx
-        self.fc9 = nn.Linear(2000, 7)
+        # Hidden layer 8 to hidden layer 9
+        self.fc9 = nn.Linear(2000, 2000)
+        self.bn9 = nn.BatchNorm1d(2000)
+        self.dropout9 = nn.Dropout(0.0000000001)
+
+        # Hidden layer 9 to output layer
+        # 8 outputs: final_x, final_y, maxHeight, timeToLand, bounceCount,
+        # apexTime, finalVx, and a log-variance uncertainty head (index 7)
+        # predicting the model's own landing-position error, trained via a
+        # separate NLL loss in main.py/kfold_eval.py - not a regression
+        # target with a ground-truth column like the other 7.
+        self.fc10 = nn.Linear(2000, 8)
 
     def forward(self, x):
         # Apply ReLU activation and batch normalization to the first layer
@@ -101,8 +109,14 @@ class ImprovedNeuralNetwork(nn.Module):
         x = self.bn8(x)
         x = self.dropout8(x)
 
-        # Output layer
+        # Apply ReLU activation and batch normalization to the ninth layer
         x = self.fc9(x)
+        x = nn.functional.relu(x)
+        x = self.bn9(x)
+        x = self.dropout9(x)
+
+        # Output layer
+        x = self.fc10(x)
         return x
 
 if __name__ == "__main__":
