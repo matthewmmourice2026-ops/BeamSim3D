@@ -158,7 +158,7 @@ static void spawnBurst(std::vector<Particle>& particles, Vector3 origin) {
 // Vertex normals come from the analytic derivative of terrainHeight, not
 // guessed, so the lighting shader gets real slope information.
 static Model buildTerrainModel() {
-    const float halfWidth = 15.0f;
+    const float halfWidth = 45.0f;
     const float xMin = -110.0f, xMax = 110.0f, step = 2.0f;
 
     std::vector<float> xs;
