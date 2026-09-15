@@ -1,18 +1,22 @@
 # BeamSim3D
 
-A soft body vehicle physics simulator written in C++ with raylib, plus a small pipeline that generates synthetic throw data and trains a neural network to predict where an object will land.
+A C++ physics engine that generates synthetic projectile-throw data, a PyTorch neural network trained to predict where things land, and a 3D game that puts the trained model up against the real physics live, with scoring and a player-vs-AI mode.
 
 ## What's in here
 
-There are two parts to this project.
+Three parts, in order of how they build on each other.
 
-**The C++ engine** simulates a vehicle made of nodes and beams (basically a mass-spring system) and renders it in 3D with raylib. It also has a headless mode that fires 10000 randomized throws (random velocity and mass) onto rolling hill terrain and records where each one comes to rest.
+**The C++ physics engine** (`ThrowSim.cpp`) simulates an object thrown with a given velocity and mass, integrated frame by frame with gravity, drag, and a bounce off rolling-hill terrain. It has a batch mode that fires hundreds of thousands of randomized throws and logs `vx0, vy0, mass -> final_x, final_y, maxHeight`, and a single-throw mode for asking the real physics for ground truth on one specific input.
 
-**The Python side** takes that dataset, trains a small feedforward neural network on it, and checks whether the network actually learned real physics or just memorized numbers.
+**The ML pipeline** (`main.py` and friends) trains a neural network on that dataset to predict landing position and max height from the three launch parameters, then checks the result against the real engine rather than trusting the training loss number.
+
+**The game** (`ThrowGame.cpp`) renders both the real throw and the AI's predicted landing live in a 3D window (raylib, custom lighting shaders, particle effects), lets you play against the AI (guess the landing spot, closest wins), and tracks target-zone scoring and stats across sessions.
+
+There's also a soft-body vehicle physics demo (`main.cpp`, `Physics.cpp`) that predates the throw/ML side of the project - a separate raylib window (`beam_sim`) showing a mass-spring vehicle chassis.
 
 ## Building the C++ part
 
-You need CMake and raylib installed. On macOS with Homebrew:
+Needs CMake and raylib. On macOS with Homebrew:
 
 ```
 brew install raylib cmake
@@ -27,20 +31,37 @@ cmake ..
 make
 ```
 
-This builds two executables:
+Builds three executables:
 
-- `beam_sim`, the 3D window that renders the vehicle
-- `throw_sim`, a headless tool that runs 10000 simulated throws and writes the results to `throw_results.csv`
+- `beam_sim` - the vehicle physics demo
+- `throw_sim` - headless data generator, also has a single-throw ground-truth mode
+- `throw_game` - the actual game
 
-Run `./throw_sim` first if you want fresh data, then `./beam_sim` to see the vehicle in the window.
+Run `./throw_sim` first to generate a dataset, then `./throw_game` to play (needs a trained model - see below - or it'll just show the real physics with the AI prediction marked as unavailable).
 
-`throw_sim` also has a single-throw mode for checking one specific input against the real physics: `./throw_sim <vx> <vy> <mass>` prints `final_x,final_y` and exits instead of generating a full dataset. `compare_predictions.py` uses this to get ground truth without re-implementing the physics in Python.
+`throw_sim` usage:
+```
+./throw_sim                          # batch mode, writes throw_results.csv
+./throw_sim <vx> <vy> <mass>          # single throw, prints final_x,final_y,maxHeight
+./throw_sim --trajectory <vx> <vy> <mass>   # prints every simulation step, used to animate the throw in-game
+```
 
-One thing that bit me: if you change something in `ThrowSim.cpp` (like the number of throws or the terrain shape), editing the source does nothing on its own. You have to rebuild (`make throw_sim`) AND actually run it again (`./throw_sim`) or `throw_results.csv` stays exactly as it was. I lost a while chasing "why isn't more data helping" before realizing I'd changed the throw count but never regenerated the file, so I was retraining on the same old dataset the whole time.
+One thing that bit me more than once: editing `throwCount` (or anything else) in `ThrowSim.cpp` does nothing on its own. You have to rebuild (`make throw_sim`) AND actually rerun it (`./throw_sim`) or `throw_results.csv` stays exactly as it was. Lost real time chasing "why isn't more data helping" before realizing I was retraining on a stale file more than once.
+
+## Playing the game
+
+```
+cd build
+./throw_game
+```
+
+Controls: arrow keys adjust throw velocity, `[`/`]` adjust mass, `A`/`D` move your landing guess (blue disc), `SPACE` throws, `R` replays the last throw. A magenta flag marks a random target zone each throw - land close to it for points. Your guess vs. the AI's prediction, whoever's closer to the real landing spot wins that round. Stats persist across sessions in `game_stats.txt` at the repo root.
+
+Needs your Python venv active in the same terminal (see below) for the AI prediction to work - without it, the game still runs and shows real physics, just with the AI side marked unavailable instead of crashing.
 
 ## The machine learning part
 
-This part needs pandas and PyTorch. I'd recommend using a virtual environment:
+Needs pandas and PyTorch:
 
 ```
 python3 -m venv venv
@@ -48,71 +69,76 @@ source venv/bin/activate
 pip install pandas torch
 ```
 
-Then run the training script:
+Train:
 
 ```
 python3 main.py
 ```
 
-This loads `build/throw_results.csv`, splits it 80/20 into train and validation sets, normalizes the inputs, and trains the network with early stopping so it doesn't just overfit the training data. It saves the trained weights (plus the normalization stats it used) to `models/ImprovedNeuralNetwork.pth`.
+Loads `build/throw_results.csv`, splits it 70/15/15 into train/val/test, normalizes inputs (train-set stats only, no leakage), trains with mini-batches, a learning-rate scheduler, and early stopping. Val loss drives early stopping; test loss is reported separately at the end since it's never touched during training - an honest number instead of one cherry-picked by early stopping. Saves weights + normalization stats to `models/ImprovedNeuralNetwork.pth`. Uses Apple Silicon's MPS backend automatically if available, falls back to CPU otherwise.
 
-To try the model on a new throw you didn't record, run:
-
-```
-python3 Throwsxx.py
-```
-
-It picks a random velocity and mass and prints what the model predicts.
-
-To actually check the model against the real physics (not just eyeball a number), run:
+Check the model against real physics (not just the training loss number):
 
 ```
 python3 compare_predictions.py
 ```
 
-This runs 30 fixed unseen throws through both the real C++ engine (via `throw_sim`'s single-throw mode) and the trained model, prints them side by side, and reports mean absolute error. This is the real way to check accuracy, not just trusting the training loss number.
+Runs 30 fixed unseen throws through both `throw_sim` and the trained model, prints them side by side, reports mean absolute error per output.
 
-If you want a more solid accuracy number than one train/val split, there's also:
+More solid accuracy number than one train/val split:
 
 ```
 python3 kfold_eval.py
 ```
 
-Does 5-fold cross validation and reports mean and standard deviation of validation loss across folds. Takes a couple minutes to run since it's training 5 separate models.
+5-fold cross validation, mirrors `main.py`'s training setup so the numbers are comparable. Takes a while - it's training 5 separate models.
+
+Quick single prediction from the command line:
+
+```
+python3 predict.py <vx> <vy> <mass>
+```
+
+Prints `final_x,final_y,maxHeight`. This is what `throw_game` calls under the hood.
 
 ## How the physics data is generated
 
-Each throw starts at a fixed height and gets a random horizontal velocity, vertical velocity, and mass. It's integrated frame by frame with gravity and a simple drag force, and lands on rolling hill terrain (a couple of sine waves added together) instead of flat ground, so the resting height actually depends on where it lands. It bounces with some energy loss and settles once it's basically stopped moving. The final x and y position is what gets logged as the target the network has to predict.
+Each throw starts at a fixed height with a random horizontal velocity, vertical velocity, and mass, integrated with gravity and linear drag. It lands on rolling-hill terrain (two sine waves added together) instead of flat ground, bounces with some energy loss, and settles once it's basically stopped moving. `final_x`, `final_y` (resting height, which varies with the terrain), and `maxHeight` (peak height reached mid-flight) all get logged as the targets the network has to predict.
 
 ## The model
 
-It's a plain feedforward network, four linear layers with batch norm and dropout in between. Nothing fancy, this was more about building a full pipeline (simulate data, train on it, verify it against ground truth) than chasing state of the art architecture.
+Feedforward network (`models/ImprovedNeuralNetwork.py`), currently 8 hidden layers. Takes 4 inputs (the 3 raw launch parameters plus one physics-informed engineered feature - the asymptotic drag-decay range, computed in `features.py` and shared by every script that touches the model so it can't drift out of sync). Outputs 3 values: `final_x, final_y, maxHeight`.
 
-Current numbers, trained on 10000 throws:
+Current best result, trained on 500,000 throws:
 
-- Validation loss: 0.0114
-- 5-fold cross validation: mean 0.0105, std dev 0.0013 across folds (tight, so this isn't a lucky split)
-- Mean absolute error against the real C++ physics on 30 unseen throws: x = 0.104, y = 0.038
+- Val loss 0.4262, test loss 0.4321 (held-out set never touched during training - close agreement to val means this generalizes, not a lucky split)
+- Mean absolute error against real physics on 30 unseen throws: x = 0.969, y = 0.168, max_height = 0.640
 
-Those errors are small relative to the ranges involved (x lands anywhere from about -80 to 80, y from about -2 to 2), so the network is actually picking up the real relationship, not just memorizing noise.
+`IMPROVEMENTS.md` has the full history of what actually moved these numbers, including the things that didn't work and got reverted.
 
 ## Repo layout
 
 ```
-main.cpp                raylib window, renders the vehicle
-Physics.cpp / .h         soft body physics (nodes, beams, wheels, engine)
-ThrowSim.cpp             headless simulator that generates throw_results.csv,
-                         also has a single-throw CLI mode for ground truth checks
-main.py                  trains the neural network, saves weights + normalization stats
-load_dataset.py          quick script to sanity check the CSV loads into tensors correctly
-Throwsxx.py              runs inference on a random new throw
-compare_predictions.py   checks the model against the real physics engine directly
-kfold_eval.py            5-fold cross validation for a more solid accuracy number
-models/                  model class definition and saved weights
+main.cpp / Physics.cpp/.h   the vehicle physics demo (beam_sim)
+ThrowSim.cpp                 the throw physics engine + dataset generator
+ThrowGame.cpp                the game, real physics vs AI prediction live
+Terrain.h / ThrowRanges.h    shared C++ headers (terrain shape, input ranges) so
+                             the game, the simulator, and dataset gen can't drift apart
+Shaders/                     lighting + post-process shaders for throw_game
+main.py                      trains the model
+features.py                  the engineered input feature, shared across every script
+predict.py                   CLI single-prediction, what throw_game calls
+compare_predictions.py       checks the model against real physics directly
+kfold_eval.py                5-fold cross validation
+load_dataset.py              sanity-checks the CSV loads into tensors correctly
+Throwsxx.py                  quick random-throw inference demo
+models/                      model class definition and saved weights
+IMPROVEMENTS.md              full history of what was tried, what worked, what didn't
 ```
 
 ## Notes to self / possible next steps
 
+- wind and variable object drag as new physics/model inputs - would need dataset regen + retrain, bigger change than anything above
+- multiple object types with different physics feels
 - try scaling the dataset up further and see where the returns actually flatten out
-- add a proper terrain-following slide instead of the simplified vertical-only bounce reflection
-- the model architecture growth (16 -> 48 -> ... -> 4 layers) was mostly trial and error, could probably get similar accuracy with something smaller if I did a real hyperparameter sweep
+- the model got wide and deep (up to 8 layers, ~3.7M params) mostly through trial and error - a real hyperparameter sweep could probably find something smaller that does as well

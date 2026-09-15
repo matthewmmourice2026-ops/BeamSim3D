@@ -4,10 +4,12 @@
 
 BeamSim3D is a C++ physics simulation engine (raylib, CMake) that generates synthetic projectile-throw data, a PyTorch neural network trained on that data to predict landing position and max height, and a 3D game (`throw_game`) that pits the trained model against the real physics live, with player-vs-AI scoring, target zones, and persistent stats. Everything below is pulled from actual training runs and git history, not estimates.
 
-Headline numbers (best verified result, 10000-throw dataset, before the current 500000-row/mini-batch run in progress):
-- Validation loss improved **~2000x** over the course of development (215.10 → 0.056 at the 10000-row stage, then continued improving through later architecture/dataset changes)
-- MAE against real physics on unseen throws: **x = 1.129, y = 1.038, max_height = 0.445** (50000-row dataset, tuned architecture)
-- Caught and fixed a real data pipeline bug (dataset silently never regenerated after a config change) that had made several "improvements" meaningless until diagnosed
+Headline numbers (current best, 500000-throw dataset):
+- Validation loss improved **~500x** over the course of development (215.10 → 0.4262), while the task itself got harder along the way (3 outputs instead of 1, 50x more data, a much wider input range)
+- MAE against real physics on unseen throws: **x = 0.969, y = 0.168, max_height = 0.640**
+- Held-out test loss (0.4321) closely matches validation loss (0.4262) - confirms the result generalizes, not a lucky split
+- Caught and fixed a real data pipeline bug (dataset silently never regenerated after a config change) **twice** - once for the initial dataset, once again when a 3rd output was added - that had made several "improvements" meaningless until diagnosed
+- Caught and fixed a training-loop bug where early-stopping patience was shorter than the LR scheduler's patience, causing training to give up before the scheduler ever got a chance to act (79 epochs instead of 928, val loss 5x worse)
 
 ## Architecture
 
@@ -71,14 +73,18 @@ Two real lessons here, not just numbers:
 1. **Hyperparameters aren't free wins.** The first LR scheduler attempt made things measurably worse. Retuning it (not abandoning the idea) is what turned it into the single biggest win of this phase.
 2. **A "textbook fix" isn't guaranteed to help your specific task.** Target normalization and weighted loss are both standard techniques for exactly the problem observed (one output dominating the loss), and both made the result worse in practice here - likely because the outputs share a trunk in this architecture and don't decouple cleanly. Verified via `compare_predictions.py` against real physics, not just trusted on faith, and reverted when the numbers said so.
 
-## Current work in progress (500000-row dataset)
+## Metrics: 500000-row dataset, mini-batching, MPS, 8-layer model
 
-Not yet verified with a completed run, so no final numbers here - the point of this log is not to write down anything that isn't checked. Changes queued/in progress:
-- Mini-batch training (was full-batch; one gradient update per 400000+ train rows was the main speed bottleneck at this scale)
-- MPS (Apple Silicon GPU) training support
-- A 4th engineered input feature (physics-informed: asymptotic drag-decay range)
-- Train/val/**test** split (70/15/15) instead of train/val (80/20), so the final reported number is never touched by early-stopping decisions - an honest number instead of a cherry-picked one
-- Architecture grown to 8 hidden layers (~3.7M params) - flagged as a real overfitting risk given the params-to-data ratio, being watched via the train/val/test gap once this run completes
+A lot changed at once here: mini-batch training instead of full-batch (was the main speed bottleneck once the dataset passed 50000 rows), MPS (Apple Silicon GPU) support, a 4th engineered input feature (physics-informed: asymptotic drag-decay range under pure exponential drag decay), Huber loss instead of MSE, weight decay added, a train/val/**test** split (70/15/15) instead of train/val (80/20) so the final number is never touched by early-stopping decisions, and the architecture grown to 8 hidden layers (~3.7M params).
+
+| Stage | Setup | Result |
+|---|---|---|
+| First mini-batch/MPS run | scheduler patience=55, early-stop patience=50 (bug: scheduler patience longer than early-stop) | 79 epochs, val loss 2.03, MAE x=4.233, y=0.962, h=2.124 - **worse than the previous best on x and h** |
+| Fixed early-stop patience to 100 (> scheduler's 55) | Same everything else | 928 epochs, val loss **0.4262**, test loss 0.4321, MAE x=0.969, y=0.168, h=0.640 |
+
+The bug: early-stopping patience was *shorter* than the LR scheduler's patience, backwards from how they're supposed to relate (scheduler needs room to act before training gives up, not the other way around). Training stopped at epoch 79 having barely let the scheduler fire once. Fixing the patience relationship alone was a 5x improvement in val loss and a 6x improvement in y's MAE, using the exact same architecture and data. A one-line config bug outweighed several actual training-pipeline features (mini-batching, MPS, the engineered feature) combined - infrastructure only pays off if the loop around it is actually configured to let it work.
+
+The params-to-data ratio here (3.7M params, 500000 rows, dropout down to near-zero) was flagged as a real overfitting risk before this ran. It didn't overfit - val and test loss stayed close together - most likely because the 10x larger dataset gave the bigger model enough signal to actually use that capacity instead of memorizing.
 
 ## The game (`throw_game`)
 
@@ -91,10 +97,11 @@ Combines the physics engine and the trained model into an actual playable piece,
 
 ## What actually moved the needle, ranked
 
-1. **Fixing the stale-dataset bug** (twice - it recurred when the 3rd output was added). Bigger architecture and "more data" did nothing until the data was actually real. Biggest recurring lesson of the whole project.
-2. **Input normalization.** 115x improvement from one change.
-3. **Retuning the LR scheduler after the first attempt made things worse.** The difference between a hyperparameter change helping vs. hurting was entirely in the tuning, not the idea itself.
-4. **Adding the train/val split**, which is what made every subsequent fix possible to actually evaluate honestly.
-5. **Scaling the dataset up** (1000 → 10000 → 50000 → 500000 in progress), each time it was genuinely regenerated.
-6. Architecture widening, dropout tuning, early stopping, mini-batching. Real, incremental gains.
-7. **Target normalization and weighted loss** - tried, measured, and reverted when they made things worse. Included here because knowing when *not* to keep a change is as much a skill as making one.
+1. **Fixing the stale-dataset bug** (recurred twice - once for the initial dataset, once when the 3rd output was added). Bigger architecture and "more data" did nothing until the data was actually real. Biggest recurring lesson of the whole project.
+2. **Fixing the early-stop-vs-scheduler patience relationship.** A one-line config bug (early stopping shorter than scheduler patience, the two need to relate in the opposite order) cost 5x on val loss and 6x on one output's MAE - bigger than several actual feature additions (mini-batching, MPS, the engineered input) combined.
+3. **Input normalization.** 115x improvement from one change.
+4. **Retuning the LR scheduler after the first attempt made things worse.** The difference between a hyperparameter change helping vs. hurting was entirely in the tuning, not the idea itself.
+5. **Adding the train/val split**, which is what made every subsequent fix possible to actually evaluate honestly.
+6. **Scaling the dataset up** (1000 → 10000 → 50000 → 500000), each time it was genuinely regenerated.
+7. Architecture widening, dropout tuning, mini-batching, MPS. Real, incremental gains, but the two config bugs above outweighed all of them individually.
+8. **Target normalization and weighted loss** - tried, measured, and reverted when they made things worse. Included here because knowing when *not* to keep a change is as much a skill as making one.
