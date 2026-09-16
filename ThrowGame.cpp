@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <csignal>
+#include <thread>
+#include <atomic>
 #include "Terrain.h"
 #include "ThrowRanges.h"
 
@@ -103,14 +105,29 @@ struct PredictServer {
     FILE* fromChild = nullptr;
 };
 static PredictServer g_predictServer;
+// Set true only after g_predictServer's FILE* pointers are fully written -
+// every read of those pointers elsewhere must check this first. That
+// ordering (write pointers, then store true; check true, then read
+// pointers) is what makes this safe without a mutex: std::atomic's
+// default seq_cst ordering turns it into a publish/subscribe handoff
+// between the loader thread and the main thread.
+static std::atomic<bool> g_predictServerReady{false};
+static std::atomic<bool> g_predictServerFailed{false};
+static std::thread g_predictServerThread;
 
-static bool startPredictServer() {
+// Runs on a background thread (see main()) - torch import + checkpoint
+// load takes ~0.5-1s, and blocking the main thread on that used to leave
+// the game window dark/unresponsive at launch. fork()+exec() from a
+// non-main thread is safe (the exec() right after fork() in the child
+// means the child never runs any other thread's code), unlike fork()
+// alone in a multithreaded process.
+static void startPredictServer() {
     int inPipe[2];  // parent writes -> child stdin
     int outPipe[2]; // child stdout -> parent reads
-    if (pipe(inPipe) != 0 || pipe(outPipe) != 0) return false;
+    if (pipe(inPipe) != 0 || pipe(outPipe) != 0) { g_predictServerFailed = true; return; }
 
     pid_t pid = fork();
-    if (pid < 0) return false;
+    if (pid < 0) { g_predictServerFailed = true; return; }
 
     if (pid == 0) {
         // Child: stdin <- inPipe[0], stdout -> outPipe[1]
@@ -130,15 +147,21 @@ static bool startPredictServer() {
     g_predictServer.pid = pid;
     g_predictServer.toChild = fdopen(inPipe[1], "w");
     g_predictServer.fromChild = fdopen(outPipe[0], "r");
-    if (!g_predictServer.toChild || !g_predictServer.fromChild) return false;
+    if (!g_predictServer.toChild || !g_predictServer.fromChild) { g_predictServerFailed = true; return; }
 
-    // Block once for the "ready" line printed after the model/checkpoint
-    // finish loading, so the first real throw doesn't race the warm-up.
+    // Block (this thread only) for the "ready" line printed after the
+    // model/checkpoint finish loading, so the first real throw doesn't
+    // race the warm-up.
     char buffer[64] = {0};
-    return fgets(buffer, sizeof(buffer), g_predictServer.fromChild) != nullptr;
+    if (fgets(buffer, sizeof(buffer), g_predictServer.fromChild) != nullptr) {
+        g_predictServerReady = true;
+    } else {
+        g_predictServerFailed = true;
+    }
 }
 
 static void stopPredictServer() {
+    if (g_predictServerThread.joinable()) g_predictServerThread.join();
     if (g_predictServer.toChild) fclose(g_predictServer.toChild); // EOF tells the child to exit
     if (g_predictServer.fromChild) fclose(g_predictServer.fromChild);
     if (g_predictServer.pid > 0) waitpid(g_predictServer.pid, nullptr, 0);
@@ -149,7 +172,7 @@ static void stopPredictServer() {
 static bool predictThrow(float vx0, float vy0, float mass, float height0, float windAccel,
                           float& outX, float& outY, float& outMaxHeight, float& outTimeToLand,
                           float& outBounceCount, float& outApexTime, float& outFinalVx, float& outUncertainty) {
-    if (!g_predictServer.toChild || !g_predictServer.fromChild) return false;
+    if (!g_predictServerReady.load()) return false;
 
     fprintf(g_predictServer.toChild, "%f %f %f %f %f\n", vx0, vy0, mass, height0, windAccel);
     if (fflush(g_predictServer.toChild) != 0) return false;
@@ -418,22 +441,14 @@ int main() {
     InitWindow(screenWidth, screenHeight, "BeamSim3D - Throw Game");
     SetWindowMinSize(480, 300);
 
-    // startPredictServer() blocks for ~0.5-1s (torch import + checkpoint
-    // load in predict_server.py) - it used to run before InitWindow(), so
-    // the whole window stayed dark/unresponsive for that entire stretch
-    // and looked hung at launch. Paint one real frame first so the window
-    // shows up immediately and macOS doesn't flag it as not responding,
-    // then pay the load cost.
-    BeginDrawing();
-    ClearBackground((Color){ 20, 24, 30, 255 });
-    const char* loadingMsg = "Loading AI model...";
-    int loadingW = MeasureText(loadingMsg, 24);
-    DrawText(loadingMsg, (screenWidth - loadingW) / 2, screenHeight / 2 - 12, 24, RAYWHITE);
-    EndDrawing();
-
-    if (!startPredictServer()) {
-        fprintf(stderr, "predict_server.py failed to start (need venv with torch active)\n");
-    }
+    // startPredictServer() takes ~0.5-1s (torch import + checkpoint load
+    // in predict_server.py). Used to block here before the main loop even
+    // started, so the window stayed dark/unresponsive for that whole
+    // stretch. Now runs on a background thread - the window and game are
+    // interactive immediately; predictThrow() just returns false (shown
+    // as "AI loading..." in the HUD, see the havePred fallback below)
+    // until g_predictServerReady flips true.
+    g_predictServerThread = std::thread(startPredictServer);
 
     // --- Lighting setup ---
     Shader litShader = LoadShader("../Shaders/lighting.vs", "../Shaders/lighting.fs");
@@ -801,8 +816,10 @@ int main() {
 
         if (state.havePred) {
             DrawTextOutlined(TextFormat("AI predicted:  x=%.2f  y=%.2f  (~%.2f avg error)", state.predX, state.predY, state.predUncertainty), 18, lineY, 17, GOLD);
+        } else if (g_predictServerFailed.load()) {
+            DrawTextOutlined("AI prediction: predict_server.py failed to start (need venv with torch active)", 18, lineY, 17, GOLD);
         } else {
-            DrawTextOutlined("AI prediction: predict_server.py call failed (need venv with torch active)", 18, lineY, 17, GOLD);
+            DrawTextOutlined("AI prediction: loading model...", 18, lineY, 17, GOLD);
         }
         lineY += 30;
 
@@ -864,8 +881,10 @@ int main() {
 
                 DrawTextOutlined(TextFormat("predicted avg landing error: ~%.2f", state.predUncertainty),
                                   px + 10, ry + 2, 13, (Color){ 200, 220, 240, 255 });
+            } else if (g_predictServerFailed.load()) {
+                DrawTextOutlined("predict_server.py failed to start", px + 10, py + 36, 14, (Color){ 220, 220, 220, 255 });
             } else {
-                DrawTextOutlined("predict_server.py call failed", px + 10, py + 36, 14, (Color){ 220, 220, 220, 255 });
+                DrawTextOutlined("Loading model...", px + 10, py + 36, 14, (Color){ 220, 220, 220, 255 });
             }
         }
 
