@@ -29,10 +29,13 @@ input_mean = checkpoint["input_mean"]
 input_std = checkpoint["input_std"]
 
 # 2. Create a brand-new, unseen physics throw
-# Generate random values for velocity, mass, launch height, and wind
-velocity_x = random.uniform(10.0, 200.0)
-velocity_y = random.uniform(1.0, 100.0)
-mass = random.uniform(0.1, 90.0)
+# Generate random values for velocity, mass, launch height, and wind.
+# Must match ThrowRanges.h - the model was only ever trained on throws
+# inside that range, so sampling outside it (this used to go up to
+# vx=200, mass=90) is extrapolation and the prediction is meaningless.
+velocity_x = random.uniform(-15.0, 65.0)
+velocity_y = random.uniform(5.0, 100.0)
+mass = random.uniform(0.5, 20.0)
 height0 = random.uniform(0.5, 20.0)
 wind_accel = random.uniform(-3.0, 3.0)
 

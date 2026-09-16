@@ -40,10 +40,14 @@ if __name__ == "__main__":
         predictions[0, 3].item(), predictions[0, 4].item(), predictions[0, 5].item(), predictions[0, 6].item(),
         predictions[0, 7].item(),
     )
-    # Predicted std dev of landing-position error, same units as x/y.
-    # 1 std = 68% confidence interval under the Gaussian assumption the
-    # uncertainty loss trains with - a real statistical fact, not a made-up
-    # percentage.
-    uncertainty_std = math.exp(0.5 * log_var)
+    # log_var = log of the per-axis landing-position error variance
+    # (sigma^2), so sigma = exp(0.5*log_var) is the per-axis std. With dx,
+    # dy each ~ N(0, sigma^2), the radial landing-position error
+    # sqrt(dx^2+dy^2) follows a Rayleigh(sigma) distribution, whose MEAN
+    # is sigma*sqrt(pi/2) - not sigma itself. Reporting that mean (rather
+    # than raw sigma) is what's directly comparable to an actual mean
+    # landing error, same units as x/y.
+    sigma = math.exp(0.5 * log_var)
+    uncertainty_std = sigma * math.sqrt(math.pi / 2.0)
 
     print(f"{landing_x},{landing_y},{max_height},{time_to_land},{bounce_count},{apex_time},{final_vx},{uncertainty_std}")

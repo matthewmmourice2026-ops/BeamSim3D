@@ -2,3 +2,5 @@
 .DS_Store
 build/
 game_stats.txt
+game_settings.txt
+game_throws.csv

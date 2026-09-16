@@ -7,50 +7,58 @@ class ImprovedNeuralNetwork(nn.Module):
         super(ImprovedNeuralNetwork, self).__init__()
         
         # Input layer to hidden layer (5 raw inputs: vx0, vy0, mass,
-        # height0, windAccel + 1 engineered feature, see features.py)
+        # height0, windAccel + 1 engineered feature - x_inf, see
+        # features.py's add_engineered_features). A physics_baseline_x
+        # experiment (7 inputs) was tried and reverted - see IMPROVEMENTS.md:
+        # every output regressed (x MAE 1.871->4.979, y 0.178->0.475,
+        # maxHeight 0.404->3.235), not just x, most likely because it was
+        # trained with patience=35 (vs. the 100 that produced the working
+        # checkpoint) and stopped well short of convergence, confounded
+        # with the new feature - inconclusive on the feature itself, but
+        # the checkpoint it produced was strictly worse and not deployable.
         self.fc1 = nn.Linear(6, 250)
         self.bn1 = nn.BatchNorm1d(250)  # Batch Normalization
-        self.dropout1 = nn.Dropout(0.0000000001)  # Dropout to reduce overfitting
+        self.dropout1 = nn.Dropout(0.05)  # Dropout to reduce overfitting
         
         # Hidden layer 1 to hidden layer 2
         self.fc2 = nn.Linear(250, 250)
         self.bn2 = nn.BatchNorm1d(250)
-        self.dropout2 = nn.Dropout(0.0000000001)
+        self.dropout2 = nn.Dropout(0.05)
 
         # Hidden layer 2 to hidden layer 3
         self.fc3 = nn.Linear(250, 250)
         self.bn3 = nn.BatchNorm1d(250)  # Batch Normalization
-        self.dropout3 = nn.Dropout(0.0000000001)
+        self.dropout3 = nn.Dropout(0.05)
 
         # Hidden layer 3 to hidden layer 4
         self.fc4 = nn.Linear(250, 300)
         self.bn4 = nn.BatchNorm1d(300)
-        self.dropout4 = nn.Dropout(0.0000000001)
+        self.dropout4 = nn.Dropout(0.05)
 
         # Hidden layer 4 to hidden layer 5
         self.fc5 = nn.Linear(300, 450)
         self.bn5 = nn.BatchNorm1d(450)
-        self.dropout5 = nn.Dropout(0.0000000001)
+        self.dropout5 = nn.Dropout(0.05)
 
         # Hidden layer 5 to hidden layer 6
         self.fc6 = nn.Linear(450, 600)
         self.bn6 = nn.BatchNorm1d(600)
-        self.dropout6 = nn.Dropout(0.0000000001)
+        self.dropout6 = nn.Dropout(0.05)
 
         # Hidden layer 6 to hidden layer 7
         self.fc7 = nn.Linear(600, 1200)
         self.bn7 = nn.BatchNorm1d(1200)
-        self.dropout7 = nn.Dropout(0.0000000001)
+        self.dropout7 = nn.Dropout(0.05)
 
         # Hidden layer 7 to hidden layer 8
         self.fc8 = nn.Linear(1200, 2000)
         self.bn8 = nn.BatchNorm1d(2000)
-        self.dropout8 = nn.Dropout(0.0000000001)
+        self.dropout8 = nn.Dropout(0.05)
 
         # Hidden layer 8 to hidden layer 9
         self.fc9 = nn.Linear(2000, 2000)
         self.bn9 = nn.BatchNorm1d(2000)
-        self.dropout9 = nn.Dropout(0.0000000001)
+        self.dropout9 = nn.Dropout(0.05)
 
         # Hidden layer 9 to output layer
         # 8 outputs: final_x, final_y, maxHeight, timeToLand, bounceCount,

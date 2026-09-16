@@ -84,7 +84,12 @@ if __name__ == "__main__":
         # physical quantity), so this pair is what gets checked for
         # calibration below instead.
         landing_errors.append(math.sqrt(err_x ** 2 + err_y ** 2))
-        predicted_stds.append(math.exp(0.5 * pred_log_var))
+        # See predict.py: log_var is log per-axis variance; the radial
+        # error is Rayleigh(sigma)-distributed with mean sigma*sqrt(pi/2),
+        # which is what's comparable to landing_errors' mean below (raw
+        # sigma alone systematically overstates it).
+        pred_sigma = math.exp(0.5 * pred_log_var)
+        predicted_stds.append(pred_sigma * math.sqrt(math.pi / 2.0))
 
         print(f"{vx0:7.1f} {vy0:7.1f} {mass:6.1f} {height0:6.1f} {wind_accel:6.1f} | {real_x:9.3f} {pred_x:9.3f} {err_x:7.3f} | "
               f"{real_y:8.3f} {pred_y:8.3f} {err_y:7.3f} | {real_h:8.3f} {pred_h:8.3f} {err_h:7.3f}")
