@@ -14,6 +14,7 @@ uniform float shininess;
 uniform vec3 fogColor;
 uniform float fogStart;
 uniform float fogEnd;
+uniform sampler2D texture0;
 
 out vec4 finalColor;
 
@@ -27,7 +28,12 @@ void main() {
     vec3 halfwayDir = normalize(toLight + viewDir);
     float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
 
-    vec3 albedo = colDiffuse.rgb * fragColor.rgb;
+    // texture0 defaults to raylib's 1x1 white pixel for any model that
+    // never gets an explicit diffuse texture (e.g. ThrowGame.cpp's terrain/
+    // ball), so this multiply is a no-op there and only visibly tiles a
+    // texture for meshes that assign one (race_game's ground/road).
+    vec3 texel = texture(texture0, fragTexCoord).rgb;
+    vec3 albedo = colDiffuse.rgb * fragColor.rgb * texel;
     vec3 color = albedo * (ambientColor + lightColor * diff) + lightColor * spec * 0.35;
 
     // Terrain now stretches out to x=3200 (see ThrowGame.cpp buildTerrainModel)

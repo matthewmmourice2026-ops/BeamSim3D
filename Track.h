@@ -135,7 +135,10 @@ inline void Track::build(const std::vector<Vector2>& cp) {
             m.normals[v * 3 + 0] = 0.0f;
             m.normals[v * 3 + 1] = 1.0f;
             m.normals[v * 3 + 2] = 0.0f;
-            m.texcoords[v * 2 + 0] = (float)i / (float)count;
+            // Repeat every ~4 units along the racing line (not one tile
+            // stretched over the whole loop) so a tiled road texture reads
+            // as asphalt grain instead of a single blurred smear.
+            m.texcoords[v * 2 + 0] = ((float)i * ds) / 4.0f;
             m.texcoords[v * 2 + 1] = (float)side;
             // Faint alternating stripe every ~10 samples along the racing
             // line, like a curb/rumble strip - cheap visual read of motion

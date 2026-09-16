@@ -12,16 +12,22 @@
 // are all trivial float[] operations instead of needing per-layer
 // serialization code.
 struct Brain {
-    static constexpr int IN = 8;  // 7 sensor rays + normalized speed
-    static constexpr int HID = 10;
-    // steering, throttle, then 3 upgrade-preference scores (engine, tires,
-    // armor) - the SAME evolved brain decides both how to drive and, when
-    // it's earned enough currency, which part to upgrade next (highest
-    // score among affordable categories wins). This ties upgrade choice
-    // into the genetic algorithm exactly like driving skill: a brain that
-    // upgrades well out-competes one that doesn't, same as one that drives
-    // well - not a separate hardcoded rule.
-    static constexpr int OUT = 5;
+    // 7 sensor rays + normalized speed + [prevSteer, prevThrottle] (its own
+    // last action fed back in, so it can reason about what it was just
+    // doing instead of reacting to each frame in isolation - short-term
+    // memory, not a full RNN) + nearest-moving-traffic distance (traffic
+    // can be timed/waited-out differently than a wall that never moves, but
+    // the shared ray sensors can't tell the brain which is which).
+    static constexpr int IN = 11;
+    static constexpr int HID = 16; // widened from 10 for the extra inputs' worth of reasoning capacity
+    // steering, throttle, then 4 purchase-preference scores (engine,
+    // tires, armor, "keep setup" pack) - the SAME evolved brain decides
+    // both how to drive and, when it's earned enough currency, what to
+    // spend on next (highest score among affordable options wins). This
+    // ties every purchase decision into the genetic algorithm exactly
+    // like driving skill: a brain that spends well out-competes one that
+    // doesn't, same as one that drives well - not a hardcoded rule.
+    static constexpr int OUT = 6;
 
     float w1[HID * IN];
     float b1[HID];
@@ -47,7 +53,7 @@ inline void forward(const Brain& b, const float in[Brain::IN], float out[Brain::
     for (int o = 0; o < Brain::OUT; o++) {
         float sum = b.b2[o];
         for (int h = 0; h < Brain::HID; h++) sum += b.w2[o * Brain::HID + h] * hidden[h];
-        out[o] = tanhf(sum); // [0]=steering [1]=throttle [2..4]=engine/tire/armor upgrade scores, all in [-1,1]
+        out[o] = tanhf(sum); // [0]=steering [1]=throttle [2..4]=engine/tire/armor scores [5]=keep-setup-pack score, all in [-1,1]
     }
 }
 

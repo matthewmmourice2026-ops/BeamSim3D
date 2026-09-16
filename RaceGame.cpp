@@ -7,6 +7,7 @@
 #include <array>
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include "Track.h"
 #include "CarPhysics.h"
@@ -36,7 +37,13 @@ static constexpr float MUTATION_STRENGTH = 0.3f;
 static constexpr float MAX_SENSOR_RANGE = 25.0f;
 static const float SENSOR_ANGLES_DEG[7] = { -60, -40, -20, 0, 20, 40, 60 };
 static constexpr float WALL_RESTITUTION = 0.35f;  // energy kept after bouncing off a wall
-static constexpr float WALL_HIT_PENALTY = 1.0f;   // small fitness cost per hit, on top of health damage
+// Was 1.0 - negligible next to the hundreds of fitness points a lap is
+// worth, so evolution had no real reason to stop bouncing off walls (a
+// car that crudely bounced its way forward could still out-score a
+// careful driver). Raised so hitting something is a genuinely costly
+// mistake, not a rounding error - roughly half a lap's worth of progress
+// per hit, comparable to HEALTH_DAMAGE_PER_HIT's real consequence (dying).
+static constexpr float WALL_HIT_PENALTY = 15.0f;
 static constexpr float HEALTH_MAX = 100.0f;
 static constexpr float HEALTH_DAMAGE_PER_HIT = 20.0f; // 5 solid hits before a car dies
 // A generation can't be eliminated by crashing anymore (cars bounce and
@@ -65,6 +72,17 @@ static const UpgradeTierInfo ARMOR_TIERS[UPGRADE_TIER_COUNT]  = { { 70, "Reinfor
 static constexpr float ENGINE_TIER_BONUS = 0.15f; // +15% top speed/accel per tier, stacking
 static constexpr float TIRE_TIER_BONUS = 0.15f;   // +15% turn rate per tier, stacking
 static constexpr float ARMOR_TIER_BONUS = 25.0f;  // +25 max health per tier, stacking
+
+// A 4th thing the brain can spend coins on: instead of a stat boost, this
+// one-shot purchase carries this generation's tiers (engine/tire/armor)
+// into the SAME car slot's next generation instead of resetting to stock.
+// Caveat, explained in the garage menu too: it carries by slot, not by
+// brain identity - the brain occupying that slot next generation is a
+// mutated descendant of this generation's best (see selectAndMutate), not
+// necessarily the exact brain that earned the parts. Still matches the
+// ask ("this car's picks don't reset") - just worth knowing why.
+static constexpr int PERSIST_PACK_COST = 250;
+static const char* PERSIST_PACK_NAME = "Keep Setup Pack";
 
 static const Color CAR_COLORS[POP_SIZE] = { RED, GOLD, LIME, SKYBLUE, VIOLET, ORANGE };
 
@@ -136,6 +154,260 @@ static void spawnWallSparks(std::vector<Particle>& particles, Vector3 origin) {
     }
 }
 
+// --- Obstacles / traffic: static pillars and slow lateral-patrolling
+// "traffic" hazards on the track surface. Detected by the SAME 7 sensor
+// rays the cars already use for track edges (see raycastObstacleDistance
+// below, taken as the min alongside the edge distance) - no brain
+// architecture change needed for cars to "see" them, the existing spatial
+// awareness just gets more to look at. ---
+struct Obstacle {
+    Vector3 pos;
+    float radius;
+    bool moving;
+    Vector3 patrolA, patrolB; // moving obstacles ping-pong between these
+    float patrolT;            // 0..1 along the patrol path
+    int patrolDir;            // +1 or -1
+};
+
+static constexpr float TRAFFIC_PATROL_SPEED = 0.22f; // patrolT units/sec
+
+static std::vector<Obstacle> buildObstacles(const Track& track) {
+    std::vector<Obstacle> obstacles;
+
+    auto placeStatic = [&](float sFrac, float lateralFrac) {
+        float s = sFrac * track.totalLength;
+        Vector3 c = track.pointAt(s);
+        Vector3 t = track.tangentAt(s);
+        Vector2 perp = { -t.z, t.x };
+        float lateral = lateralFrac * (Track::halfWidth - 1.5f); // stay inboard of the edges
+        Obstacle o{};
+        o.pos = { c.x + perp.x * lateral, Track::trackY, c.z + perp.y * lateral };
+        o.radius = 2.0f;
+        o.moving = false;
+        obstacles.push_back(o);
+    };
+    placeStatic(0.15f, -0.5f);
+    placeStatic(0.35f, 0.6f);
+    placeStatic(0.55f, -0.6f);
+    placeStatic(0.78f, 0.4f);
+
+    auto placeTraffic = [&](float sFrac) {
+        float s = sFrac * track.totalLength;
+        Vector3 c = track.pointAt(s);
+        Vector3 t = track.tangentAt(s);
+        Vector2 perp = { -t.z, t.x };
+        float lateral = Track::halfWidth - 1.5f;
+        Obstacle o{};
+        o.patrolA = { c.x - perp.x * lateral, Track::trackY, c.z - perp.y * lateral };
+        o.patrolB = { c.x + perp.x * lateral, Track::trackY, c.z + perp.y * lateral };
+        o.pos = o.patrolA;
+        o.radius = 1.6f;
+        o.moving = true;
+        o.patrolT = 0.0f;
+        o.patrolDir = 1;
+        obstacles.push_back(o);
+    };
+    placeTraffic(0.25f);
+    placeTraffic(0.65f);
+
+    return obstacles;
+}
+
+static void updateObstacles(std::vector<Obstacle>& obstacles, float dt) {
+    for (auto& o : obstacles) {
+        if (!o.moving) continue;
+        o.patrolT += TRAFFIC_PATROL_SPEED * dt * o.patrolDir;
+        if (o.patrolT >= 1.0f) { o.patrolT = 1.0f; o.patrolDir = -1; }
+        if (o.patrolT <= 0.0f) { o.patrolT = 0.0f; o.patrolDir = 1; }
+        o.pos = Vector3Lerp(o.patrolA, o.patrolB, o.patrolT);
+    }
+}
+
+// --- Visible track-edge walls: a physical red/white barrier rendered along
+// Track::leftEdge/rightEdge, so a wall hit is something the player can SEE,
+// not just a number changing. Purely visual - collision already happens
+// against these same edge arrays via raycastEdgeDistance/nearestArcLength
+// (see the per-agent wall-collision block in main()), which is what applies
+// WALL_HIT_PENALTY and HEALTH_DAMAGE_PER_HIT; this mesh doesn't touch
+// physics. Backface culling is disabled for the draw call (not per-triangle
+// winding tricks) so the ribbon reads correctly from both the track side
+// and the outside, regardless of which edge it's on. ---
+static constexpr float WALL_HEIGHT = 1.4f;
+static constexpr int WALL_STRIPE_SAMPLES = 6;
+
+static Model buildWallModel(const Track& track) {
+    int count = (int)track.center.size();
+    int vertexCount = count * 4; // (bottom,top) x (left,right)
+    int triangleCount = count * 4; // 2 quads (left,right) x 2 tris, per sample->next
+    Mesh m = { 0 };
+    m.vertexCount = vertexCount;
+    m.triangleCount = triangleCount;
+    m.vertices = (float*)MemAlloc(vertexCount * 3 * sizeof(float));
+    m.normals = (float*)MemAlloc(vertexCount * 3 * sizeof(float));
+    m.texcoords = (float*)MemAlloc(vertexCount * 2 * sizeof(float));
+    m.colors = (unsigned char*)MemAlloc(vertexCount * 4 * sizeof(unsigned char));
+    m.indices = (unsigned short*)MemAlloc(triangleCount * 3 * sizeof(unsigned short));
+
+    int idx = 0;
+    for (int side = 0; side < 2; side++) { // 0 = left edge, 1 = right edge
+        for (int i = 0; i < count; i++) {
+            Vector3 prev = track.center[track.wrapIndex(i - 1)];
+            Vector3 next = track.center[track.wrapIndex(i + 1)];
+            Vector2 tangent = Vector2Normalize((Vector2){ next.x - prev.x, next.z - prev.z });
+            Vector2 perp = { -tangent.y, tangent.x };
+            Vector3 outward = side == 0 ? (Vector3){ -perp.x, 0.0f, -perp.y } : (Vector3){ perp.x, 0.0f, perp.y };
+            Vector3 edgePt = side == 0 ? track.leftEdge[i] : track.rightEdge[i];
+            bool stripe = (i / WALL_STRIPE_SAMPLES) % 2 == 0;
+            Color c = stripe ? (Color){ 205, 30, 30, 255 } : (Color){ 225, 225, 225, 255 };
+
+            int base = (side * count + i) * 2;
+            for (int j = 0; j < 2; j++) { // 0 = bottom, 1 = top
+                int v = base + j;
+                Vector3 p = { edgePt.x, Track::trackY + (j == 0 ? 0.0f : WALL_HEIGHT), edgePt.z };
+                m.vertices[v * 3 + 0] = p.x; m.vertices[v * 3 + 1] = p.y; m.vertices[v * 3 + 2] = p.z;
+                m.normals[v * 3 + 0] = outward.x; m.normals[v * 3 + 1] = outward.y; m.normals[v * 3 + 2] = outward.z;
+                m.texcoords[v * 2 + 0] = (float)i / 4.0f; m.texcoords[v * 2 + 1] = (float)j;
+                m.colors[v * 4 + 0] = c.r; m.colors[v * 4 + 1] = c.g; m.colors[v * 4 + 2] = c.b; m.colors[v * 4 + 3] = c.a;
+            }
+        }
+        for (int i = 0; i < count; i++) {
+            int iNext = track.wrapIndex(i + 1);
+            unsigned short bottomA = (unsigned short)((side * count + i) * 2);
+            unsigned short topA = bottomA + 1;
+            unsigned short bottomB = (unsigned short)((side * count + iNext) * 2);
+            unsigned short topB = bottomB + 1;
+            m.indices[idx++] = bottomA; m.indices[idx++] = topA; m.indices[idx++] = bottomB;
+            m.indices[idx++] = topA;    m.indices[idx++] = topB; m.indices[idx++] = bottomB;
+        }
+    }
+
+    UploadMesh(&m, false);
+    return LoadModelFromMesh(m);
+}
+
+// --- Procedural ground/road textures. No external asset files (same
+// no-asset-fetching convention as main.cpp's beam_sim fallback) - grass and
+// asphalt are both GenImagePerlinNoise() tinted/contrasted, then tiled via
+// REPEAT wrap + texcoords that repeat every few units (see Track.h's build()
+// and buildGroundPlane() below) instead of stretching one tile over the
+// whole surface. ---
+static Texture2D generateGrassTexture() {
+    Image img = GenImagePerlinNoise(256, 256, 0, 0, 4.5f);
+    ImageColorContrast(&img, 25.0f);
+    ImageColorTint(&img, (Color){ 80, 150, 65, 255 });
+    ImageColorBrightness(&img, -10);
+    Texture2D tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    GenTextureMipmaps(&tex);
+    SetTextureFilter(tex, TEXTURE_FILTER_TRILINEAR);
+    SetTextureWrap(tex, TEXTURE_WRAP_REPEAT);
+    return tex;
+}
+
+static Texture2D generateRoadTexture() {
+    Image img = GenImagePerlinNoise(256, 256, 50, 50, 7.0f);
+    ImageColorContrast(&img, 15.0f);
+    ImageColorTint(&img, (Color){ 90, 90, 98, 255 });
+    ImageColorBrightness(&img, -35);
+    Texture2D tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    GenTextureMipmaps(&tex);
+    SetTextureFilter(tex, TEXTURE_FILTER_TRILINEAR);
+    SetTextureWrap(tex, TEXTURE_WRAP_REPEAT);
+    return tex;
+}
+
+// Flat quad sized around the track's bounding box (+ margin) so grass
+// extends well past every edge/obstacle. Texcoords repeat every
+// GRASS_TILE_SIZE units (not one tile across the whole quad) so the noise
+// texture reads as ground texture instead of a single blurred gradient.
+static constexpr float GRASS_TILE_SIZE = 20.0f;
+static constexpr float GROUND_MARGIN = 60.0f;
+
+static Model buildGroundPlane(const Track& track) {
+    float minX = 1e9f, maxX = -1e9f, minZ = 1e9f, maxZ = -1e9f;
+    for (const auto& p : track.center) {
+        minX = fminf(minX, p.x); maxX = fmaxf(maxX, p.x);
+        minZ = fminf(minZ, p.z); maxZ = fmaxf(maxZ, p.z);
+    }
+    minX -= GROUND_MARGIN; maxX += GROUND_MARGIN;
+    minZ -= GROUND_MARGIN; maxZ += GROUND_MARGIN;
+    float sizeX = maxX - minX, sizeZ = maxZ - minZ;
+    float groundY = Track::trackY - 0.05f; // just under the track so there's no z-fighting
+
+    Mesh m = { 0 };
+    m.vertexCount = 4;
+    m.triangleCount = 2;
+    m.vertices = (float*)MemAlloc(4 * 3 * sizeof(float));
+    m.normals = (float*)MemAlloc(4 * 3 * sizeof(float));
+    m.texcoords = (float*)MemAlloc(4 * 2 * sizeof(float));
+    m.colors = (unsigned char*)MemAlloc(4 * 4 * sizeof(unsigned char));
+    m.indices = (unsigned short*)MemAlloc(6 * sizeof(unsigned short));
+
+    Vector3 corners[4] = {
+        { minX, groundY, minZ }, { maxX, groundY, minZ },
+        { maxX, groundY, maxZ }, { minX, groundY, maxZ },
+    };
+    float us[4] = { 0.0f, sizeX / GRASS_TILE_SIZE, sizeX / GRASS_TILE_SIZE, 0.0f };
+    float vs[4] = { 0.0f, 0.0f, sizeZ / GRASS_TILE_SIZE, sizeZ / GRASS_TILE_SIZE };
+    for (int i = 0; i < 4; i++) {
+        m.vertices[i * 3 + 0] = corners[i].x;
+        m.vertices[i * 3 + 1] = corners[i].y;
+        m.vertices[i * 3 + 2] = corners[i].z;
+        m.normals[i * 3 + 0] = 0.0f; m.normals[i * 3 + 1] = 1.0f; m.normals[i * 3 + 2] = 0.0f;
+        m.texcoords[i * 2 + 0] = us[i];
+        m.texcoords[i * 2 + 1] = vs[i];
+        m.colors[i * 4 + 0] = 255; m.colors[i * 4 + 1] = 255; m.colors[i * 4 + 2] = 255; m.colors[i * 4 + 3] = 255;
+    }
+    unsigned short idx[6] = { 0, 2, 1, 0, 3, 2 };
+    memcpy(m.indices, idx, sizeof(idx));
+
+    UploadMesh(&m, false);
+    return LoadModelFromMesh(m);
+}
+
+// 2D (XZ) ray-vs-circle nearest hit distance, same closed-form approach as
+// Track.h's raySegmentIntersect but for obstacles instead of track edges.
+static float raycastObstacleDistance(Vector3 origin, Vector2 dir, const std::vector<Obstacle>& obstacles, float maxRange) {
+    float best = maxRange;
+    for (const auto& o : obstacles) {
+        float ox = o.pos.x - origin.x, oz = o.pos.z - origin.z;
+        float proj = ox * dir.x + oz * dir.y; // distance along the ray to the closest approach
+        if (proj < 0.0f || proj > best) continue;
+        float closestX = origin.x + dir.x * proj, closestZ = origin.z + dir.y * proj;
+        float dx = o.pos.x - closestX, dz = o.pos.z - closestZ;
+        float distSq = dx * dx + dz * dz;
+        if (distSq > o.radius * o.radius) continue; // ray misses the circle entirely
+        float halfChord = sqrtf(o.radius * o.radius - distSq);
+        float t = proj - halfChord; // near intersection point
+        if (t >= 0.0f && t < best) best = t;
+    }
+    return best;
+}
+
+// Shared bounce response for both wall hits and obstacle hits: reflect
+// velocity off the given normal (like bumping a guardrail), damp it, push
+// the car to `insetDist` from `pushFrom` along that normal (not exactly
+// onto the boundary - see the wall-collision comment where this used to
+// be inlined: clamping exactly to a boundary re-triggered a bounce almost
+// every frame), and enforce a minimum post-bounce speed so a near-zero
+// heavily-damped bounce doesn't just sit there and immediately re-collide.
+static void bounceCarState(CarState& state, Vector3 pushFrom, Vector2 normal, float insetDist) {
+    const float MIN_BOUNCE_SPEED = 5.0f;
+    state.pos.x = pushFrom.x + normal.x * insetDist;
+    state.pos.z = pushFrom.z + normal.y * insetDist; // Vector2's .y here holds the world Z component
+    Vector2 vel = { cosf(state.heading) * state.speed, sinf(state.heading) * state.speed };
+    float vDotN = vel.x * normal.x + vel.y * normal.y;
+    Vector2 reflected = { (vel.x - 2.0f * vDotN * normal.x) * WALL_RESTITUTION,
+                           (vel.y - 2.0f * vDotN * normal.y) * WALL_RESTITUTION };
+    state.speed = fmaxf(Vector2Length(reflected), MIN_BOUNCE_SPEED);
+    // Reflected could be near-zero-length (near head-on hit) - heading from
+    // the surface normal itself (pointing back away from what was hit)
+    // rather than an undefined atan2(0,0) in that case.
+    Vector2 headingDir = Vector2Length(reflected) > 0.01f ? reflected : (Vector2){ -normal.x, -normal.y };
+    state.heading = atan2f(headingDir.y, headingDir.x);
+}
+
 // --- Genetic-algorithm population ---
 
 struct CarAgent {
@@ -154,6 +426,9 @@ struct CarAgent {
     float distanceSinceCoinTick = 0.0f;
     int engineTier = 0, tireTier = 0, armorTier = 0; // 0 = stock, up to UPGRADE_TIER_COUNT
     std::string lastUpgrade = "none";                // for the garage menu - what the brain last picked
+    bool keepSetupBought = false; // if true when this generation ends, tiers carry into next gen instead of resetting
+
+    float prevSteer = 0.0f, prevThrottle = 0.0f; // fed back in as brain inputs next frame - see CarBrain.h
 };
 
 struct Population {
@@ -270,6 +545,9 @@ static void placeOnStartGrid(Population& pop, const Track& track) {
         a.tireTier = 0;
         a.armorTier = 0;
         a.lastUpgrade = "none";
+        a.keepSetupBought = false; // must be re-bought each generation to keep carrying forward
+        a.prevSteer = 0.0f;
+        a.prevThrottle = 0.0f;
     }
 }
 
@@ -302,7 +580,7 @@ static std::string tryPurchaseUpgrade(CarAgent& agent, const float out[Brain::OU
     int tiers[3] = { agent.engineTier, agent.tireTier, agent.armorTier };
     const UpgradeTierInfo* tables[3] = { ENGINE_TIERS, TIRE_TIERS, ARMOR_TIERS };
 
-    int bestCat = -1;
+    int bestCat = -1; // 0-2 = engine/tire/armor tier, 3 = keep-setup pack
     float bestScore = -1e9f;
     for (int cat = 0; cat < 3; cat++) {
         if (tiers[cat] >= UPGRADE_TIER_COUNT) continue; // maxed out
@@ -310,7 +588,18 @@ static std::string tryPurchaseUpgrade(CarAgent& agent, const float out[Brain::OU
         float score = out[2 + cat];
         if (score > bestScore) { bestScore = score; bestCat = cat; }
     }
+    if (!agent.keepSetupBought && PERSIST_PACK_COST <= agent.coins && out[5] > bestScore) {
+        bestScore = out[5];
+        bestCat = 3;
+    }
     if (bestCat < 0) return "";
+
+    if (bestCat == 3) {
+        agent.coins -= PERSIST_PACK_COST;
+        agent.keepSetupBought = true;
+        agent.lastUpgrade = PERSIST_PACK_NAME;
+        return PERSIST_PACK_NAME;
+    }
 
     const UpgradeTierInfo& tier = tables[bestCat][tiers[bestCat]];
     agent.coins -= tier.cost;
@@ -367,8 +656,8 @@ static std::vector<Vector2> trackControlPoints() {
 int main() {
     SetRandomSeed((unsigned int)GetTime());
 
-    const int screenWidth = 1000;
-    const int screenHeight = 600;
+    const int screenWidth = 1280;
+    const int screenHeight = 800;
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(screenWidth, screenHeight, "BeamSim3D - Race Game");
@@ -411,6 +700,17 @@ int main() {
     Track track;
     track.build(trackControlPoints());
     track.mesh.materials[0].shader = litShader;
+    Texture2D roadTexture = generateRoadTexture();
+    track.mesh.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = roadTexture;
+    std::vector<Obstacle> obstacles = buildObstacles(track);
+
+    Model groundModel = buildGroundPlane(track);
+    Texture2D grassTexture = generateGrassTexture();
+    groundModel.materials[0].shader = litShader;
+    groundModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = grassTexture;
+
+    Model wallModel = buildWallModel(track);
+    wallModel.materials[0].shader = litShader;
 
     Population pop;
     int loadedGen = 0;
@@ -500,6 +800,7 @@ int main() {
 
         if (!paused) {
             frameInGen++;
+            updateObstacles(obstacles, dt);
             bool lapTargetReached = false;
             bool allDead = true;
             for (int carIdx = 0; carIdx < POP_SIZE; carIdx++) {
@@ -511,12 +812,26 @@ int main() {
                 for (int r = 0; r < 7; r++) {
                     float a = agent.state.heading + SENSOR_ANGLES_DEG[r] * DEG2RAD;
                     Vector2 dir = { cosf(a), sinf(a) };
-                    inputs[r] = track.raycastEdgeDistance(agent.state.pos, dir, agent.rawArcLength, MAX_SENSOR_RANGE) / MAX_SENSOR_RANGE;
+                    float edgeDist = track.raycastEdgeDistance(agent.state.pos, dir, agent.rawArcLength, MAX_SENSOR_RANGE);
+                    float obstacleDist = raycastObstacleDistance(agent.state.pos, dir, obstacles, MAX_SENSOR_RANGE);
+                    inputs[r] = fminf(edgeDist, obstacleDist) / MAX_SENSOR_RANGE;
                 }
                 inputs[7] = agent.state.speed / 40.0f;
+                inputs[8] = agent.prevSteer;
+                inputs[9] = agent.prevThrottle;
+
+                float nearestTraffic = MAX_SENSOR_RANGE;
+                for (const auto& o : obstacles) {
+                    if (!o.moving) continue;
+                    float d = Vector3Distance(agent.state.pos, o.pos) - o.radius;
+                    nearestTraffic = fminf(nearestTraffic, fmaxf(d, 0.0f));
+                }
+                inputs[10] = nearestTraffic / MAX_SENSOR_RANGE;
 
                 float out[Brain::OUT];
                 forward(agent.brain, inputs, out);
+                agent.prevSteer = out[0];
+                agent.prevThrottle = out[1];
                 // Damaged cars drive worse; engine/tire upgrades drive
                 // better - both scale the same physics knobs CarPhysics.h
                 // exposes, just in opposite directions and kept separate
@@ -552,27 +867,33 @@ int main() {
                 // guarantees real clearance before another hit is possible.
                 if (lateralDist > Track::halfWidth) {
                     const float WALL_MARGIN = 1.0f;
-                    const float MIN_BOUNCE_SPEED = 5.0f;
                     Vector3 centerPt = track.pointAt(sRaw);
                     Vector2 normal = Vector2Normalize((Vector2){ agent.state.pos.x - centerPt.x, agent.state.pos.z - centerPt.z });
-                    float insetDist = Track::halfWidth - WALL_MARGIN;
-                    agent.state.pos.x = centerPt.x + normal.x * insetDist;
-                    agent.state.pos.z = centerPt.z + normal.y * insetDist; // Vector2's .y here holds the world Z component
-                    Vector2 vel = { cosf(agent.state.heading) * agent.state.speed, sinf(agent.state.heading) * agent.state.speed };
-                    float vDotN = vel.x * normal.x + vel.y * normal.y;
-                    Vector2 reflected = { (vel.x - 2.0f * vDotN * normal.x) * WALL_RESTITUTION,
-                                           (vel.y - 2.0f * vDotN * normal.y) * WALL_RESTITUTION };
-                    agent.state.speed = fmaxf(Vector2Length(reflected), MIN_BOUNCE_SPEED);
-                    // Reflected could be near-zero-length (near head-on hit) - heading from
-                    // the wall normal itself (pointing back into the track) rather than an
-                    // undefined atan2(0,0) in that case.
-                    Vector2 headingDir = Vector2Length(reflected) > 0.01f ? reflected : (Vector2){ -normal.x, -normal.y };
-                    agent.state.heading = atan2f(headingDir.y, headingDir.x);
+                    bounceCarState(agent.state, centerPt, normal, Track::halfWidth - WALL_MARGIN);
                     agent.wallHits++;
                     agent.fitness -= WALL_HIT_PENALTY;
                     agent.health = fmaxf(agent.health - HEALTH_DAMAGE_PER_HIT, 0.0f);
                     if (agent.health <= 0.0f) agent.alive = false;
                     spawnWallSparks(particles, (Vector3){ agent.state.pos.x, 0.8f, agent.state.pos.z });
+                }
+
+                // Obstacle collision - same bounce/damage consequence as a
+                // wall hit, just against a circle instead of the track edge.
+                for (const auto& obs : obstacles) {
+                    float odx = agent.state.pos.x - obs.pos.x, odz = agent.state.pos.z - obs.pos.z;
+                    float centerDist = sqrtf(odx * odx + odz * odz);
+                    const float CAR_RADIUS = 0.9f;
+                    float minDist = obs.radius + CAR_RADIUS;
+                    if (centerDist < minDist && centerDist > 0.0001f) {
+                        Vector2 normal = { odx / centerDist, odz / centerDist };
+                        bounceCarState(agent.state, obs.pos, normal, minDist + 0.5f);
+                        agent.wallHits++;
+                        agent.fitness -= WALL_HIT_PENALTY;
+                        agent.health = fmaxf(agent.health - HEALTH_DAMAGE_PER_HIT, 0.0f);
+                        if (agent.health <= 0.0f) agent.alive = false;
+                        spawnWallSparks(particles, (Vector3){ agent.state.pos.x, 0.8f, agent.state.pos.z });
+                        break; // one obstacle hit per frame is enough to resolve
+                    }
                 }
 
                 int newLaps = (int)(agent.distanceTraveled / track.totalLength);
@@ -610,9 +931,34 @@ int main() {
             double elapsed = GetTime() - genStartTime - totalPausedDuration;
             bool timeModeEnd = settings.endMode == RaceEndMode::TIME_LIMIT && elapsed >= settings.timeLimitSeconds;
             if (allDead || timeModeEnd || lapTargetReached || elapsed >= SAFETY_MAX_TIME) {
+                // Capture which slots bought the Keep Setup Pack (and their
+                // tiers) BEFORE placeOnStartGrid resets everything to
+                // stock, so it can be reapplied after - see PERSIST_PACK_
+                // COST's comment for the by-slot-not-by-brain caveat.
+                std::array<bool, POP_SIZE> carryOver{};
+                std::array<int, POP_SIZE> carryEngine{}, carryTire{}, carryArmor{};
+                for (int i = 0; i < POP_SIZE; i++) {
+                    carryOver[i] = pop.agents[i].keepSetupBought;
+                    carryEngine[i] = pop.agents[i].engineTier;
+                    carryTire[i] = pop.agents[i].tireTier;
+                    carryArmor[i] = pop.agents[i].armorTier;
+                }
+
                 selectAndMutate(pop);
                 saveBrainFile(BRAIN_PATH, pop);
                 placeOnStartGrid(pop, track);
+
+                for (int i = 0; i < POP_SIZE; i++) {
+                    if (!carryOver[i]) continue;
+                    CarAgent& a = pop.agents[i];
+                    a.engineTier = carryEngine[i];
+                    a.tireTier = carryTire[i];
+                    a.armorTier = carryArmor[i];
+                    a.healthMax = HEALTH_MAX + ARMOR_TIER_BONUS * a.armorTier;
+                    a.health = a.healthMax;
+                    a.lastUpgrade = "carried over";
+                }
+
                 genStartTime = GetTime();
                 totalPausedDuration = 0.0;
                 actionLog.close();
@@ -654,8 +1000,18 @@ int main() {
         DrawRectangleGradientV(0, 0, screenWidth, screenHeight, (Color){ 40, 45, 65, 255 }, (Color){ 90, 100, 130, 255 });
 
         BeginMode3D(camera);
+        DrawModel(groundModel, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
         DrawModel(track.mesh, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
+        rlDisableBackfaceCulling();
+        DrawModel(wallModel, (Vector3){ 0, 0, 0 }, 1.0f, WHITE);
+        rlEnableBackfaceCulling();
         BeginShaderMode(litShader); // DrawCube uses whatever shader is active - track's Model carries its own
+        for (const auto& obs : obstacles) {
+            Vector3 base = { obs.pos.x, Track::trackY, obs.pos.z };
+            Color col = obs.moving ? (Color){ 255, 140, 20, 255 } : (Color){ 120, 30, 30, 255 };
+            DrawCylinder(base, obs.radius, obs.radius, 3.2f, 12, col);
+            DrawCylinderWires(base, obs.radius, obs.radius, 3.2f, 12, (Color){ 0, 0, 0, 130 });
+        }
         for (int i = 0; i < POP_SIZE; i++) {
             const CarAgent& a = pop.agents[i];
             // Dead cars sit greyed-out and dim where they died instead of
@@ -702,68 +1058,73 @@ int main() {
             DrawRectangle(bx, by, (int)(barW * frac), barH, a.alive ? healthCol : (Color){ 90, 90, 90, 180 });
         }
 
-        // --- HUD ---
-        int panelW = 260, panelH = 70;
-        DrawPanel(8, 8, panelW, panelH);
-        DrawTextOutlined(TextFormat("Generation %d", pop.generation), 18, 16, 20, RAYWHITE);
+        // --- HUD --- (sizes/positions tuned for the 1280x800 internal
+        // canvas - was 1000x600 with 13-15px text, which read as blocky/
+        // "retro-by-accident" rather than a deliberate style. Bigger canvas
+        // + bigger type, same raylib default font.)
+        int panelW = 340, panelH = 118;
+        DrawPanel(10, 10, panelW, panelH);
+        DrawTextOutlined(TextFormat("Generation %d", pop.generation), 22, 18, 24, RAYWHITE);
         double elapsedShown = paused ? (pauseStartTime - genStartTime - totalPausedDuration) : (GetTime() - genStartTime - totalPausedDuration);
         if (settings.endMode == RaceEndMode::TIME_LIMIT) {
-            DrawTextOutlined(TextFormat("Time %.1f / %.0fs", elapsedShown, settings.timeLimitSeconds), 18, 40, 15, (Color){ 200, 210, 230, 255 });
+            DrawTextOutlined(TextFormat("Time %.1f / %.0fs", elapsedShown, settings.timeLimitSeconds), 22, 50, 18, (Color){ 200, 210, 230, 255 });
         } else {
             int leadLaps = 0;
             for (const auto& a : pop.agents) leadLaps = std::max(leadLaps, a.lapsCompleted);
-            DrawTextOutlined(TextFormat("Lap %d / %d  (%.0fs)", leadLaps, settings.lapTarget, elapsedShown), 18, 40, 15, (Color){ 200, 210, 230, 255 });
+            DrawTextOutlined(TextFormat("Lap %d / %d  (%.0fs)", leadLaps, settings.lapTarget, elapsedShown), 22, 50, 18, (Color){ 200, 210, 230, 255 });
         }
-        DrawTextOutlined(TextFormat("Best-ever: %.1f", pop.bestEverFitness), 18, 58, 15, GOLD);
+        DrawTextOutlined(TextFormat("Best-ever: %.1f", pop.bestEverFitness), 22, 72, 18, GOLD);
+        DrawTextOutlined(TextFormat("Hit red/white wall: -%.0f fitness, -%.0f HP", WALL_HIT_PENALTY, HEALTH_DAMAGE_PER_HIT),
+                          22, 96, 14, (Color){ 235, 120, 120, 255 });
 
-        int boardW = 270, boardH = 20 + POP_SIZE * 22;
-        DrawPanel(8, panelH + 16, boardW, boardH, GOLD);
-        DrawTextOutlined("LEADERBOARD", 18, panelH + 22, 14, RAYWHITE);
+        int boardW = 350, boardH = 30 + POP_SIZE * 28;
+        DrawPanel(10, panelH + 20, boardW, boardH, GOLD);
+        DrawTextOutlined("LEADERBOARD", 22, panelH + 28, 17, RAYWHITE);
         std::array<int, POP_SIZE> rank = { 0, 1, 2, 3, 4, 5 };
         std::sort(rank.begin(), rank.end(), [&](int a, int b) { return pop.agents[a].fitness > pop.agents[b].fitness; });
         for (int row = 0; row < POP_SIZE; row++) {
             int i = rank[row];
             const CarAgent& a = pop.agents[i];
-            int y = panelH + 42 + row * 22;
-            DrawRectangle(18, y + 2, 10, 10, a.alive ? CAR_COLORS[i] : (Color){ 90, 90, 90, 255 });
+            int y = panelH + 54 + row * 28;
+            DrawRectangle(22, y + 3, 12, 12, a.alive ? CAR_COLORS[i] : (Color){ 90, 90, 90, 255 });
             const char* healthStr = a.alive ? TextFormat("hp %.0f", a.health) : "DEAD";
-            DrawTextOutlined(TextFormat("%d. Car %d  %.1f  lap %d  %s", row + 1, i + 1, a.fitness, a.lapsCompleted, healthStr), 34, y, 13,
+            DrawTextOutlined(TextFormat("%d. Car %d  %.1f  lap %d  %s", row + 1, i + 1, a.fitness, a.lapsCompleted, healthStr), 40, y, 16,
                               (i == target) ? RAYWHITE : (Color){ 190, 190, 190, 255 });
         }
 
         if (showSettings) {
-            int sx = screenWidth - 300, sy = 8, sw = 292, sh = 142;
+            int sx = screenWidth - 380, sy = 10, sw = 360, sh = 178;
             DrawPanel(sx, sy, sw, sh);
-            DrawTextOutlined("SETTINGS (TAB to close)", sx + 10, sy + 8, 17, RAYWHITE);
-            DrawTextOutlined(TextFormat("Mouse sensitivity: %.2f  (-/+ to adjust)", settings.mouseSensitivity), sx + 10, sy + 34, 15, (Color){ 220, 220, 220, 255 });
-            DrawTextOutlined(TextFormat("Invert Y: %s  (I to toggle)", settings.invertY ? "ON" : "OFF"), sx + 10, sy + 56, 15, (Color){ 220, 220, 220, 255 });
+            DrawTextOutlined("SETTINGS (TAB to close)", sx + 12, sy + 10, 20, RAYWHITE);
+            DrawTextOutlined(TextFormat("Mouse sensitivity: %.2f  (-/+ to adjust)", settings.mouseSensitivity), sx + 12, sy + 42, 17, (Color){ 220, 220, 220, 255 });
+            DrawTextOutlined(TextFormat("Invert Y: %s  (I to toggle)", settings.invertY ? "ON" : "OFF"), sx + 12, sy + 68, 17, (Color){ 220, 220, 220, 255 });
             const char* modeStr = settings.endMode == RaceEndMode::TIME_LIMIT ? "Time limit" : "Lap count";
-            DrawTextOutlined(TextFormat("Generation end: %s  (M to toggle)", modeStr), sx + 10, sy + 78, 15, (Color){ 220, 220, 220, 255 });
+            DrawTextOutlined(TextFormat("Generation end: %s  (M to toggle)", modeStr), sx + 12, sy + 94, 17, (Color){ 220, 220, 220, 255 });
             if (settings.endMode == RaceEndMode::TIME_LIMIT) {
-                DrawTextOutlined(TextFormat("Time per generation: %.0fs  ([ / ] to adjust)", settings.timeLimitSeconds), sx + 10, sy + 100, 15, (Color){ 220, 220, 220, 255 });
+                DrawTextOutlined(TextFormat("Time per generation: %.0fs  ([ / ] to adjust)", settings.timeLimitSeconds), sx + 12, sy + 120, 17, (Color){ 220, 220, 220, 255 });
             } else {
-                DrawTextOutlined(TextFormat("Laps per generation: %d  ([ / ] to adjust)", settings.lapTarget), sx + 10, sy + 100, 15, (Color){ 220, 220, 220, 255 });
+                DrawTextOutlined(TextFormat("Laps per generation: %d  ([ / ] to adjust)", settings.lapTarget), sx + 12, sy + 120, 17, (Color){ 220, 220, 220, 255 });
             }
-            DrawTextOutlined("Right-drag: orbit camera | Scroll: zoom", sx + 10, sy + 122, 14, (Color){ 180, 200, 220, 255 });
+            DrawTextOutlined("Right-drag: orbit camera | Scroll: zoom", sx + 12, sy + 150, 16, (Color){ 180, 200, 220, 255 });
         }
 
         // --- Garage: NFS-style shop screen showing what the brain is
         // buying and what it costs, not just that fitness numbers moved. ---
         if (showGarage) {
-            int gx = (screenWidth - 760) / 2, gy = 90, gw = 760, gh = 420;
+            int gx = (screenWidth - 980) / 2, gy = 110, gw = 980, gh = 540;
             DrawPanel(gx, gy, gw, gh, GOLD);
-            DrawTextOutlined("GARAGE - AI upgrade decisions (G to close)", gx + 14, gy + 10, 20, RAYWHITE);
+            DrawTextOutlined("GARAGE - AI upgrade decisions (G to close)", gx + 18, gy + 14, 24, RAYWHITE);
             DrawTextOutlined("Each car's brain spends its own coins - highest-scoring affordable part wins, every time it can afford one.",
-                              gx + 14, gy + 34, 13, (Color){ 190, 200, 215, 255 });
+                              gx + 18, gy + 44, 16, (Color){ 190, 200, 215, 255 });
 
-            int colCar = gx + 14, colCoins = gx + 90, colEngine = gx + 180, colTires = gx + 340, colArmor = gx + 500, colPick = gx + 650;
-            int headerY = gy + 58;
-            DrawTextOutlined("Car", colCar, headerY, 13, GOLD);
-            DrawTextOutlined("Coins", colCoins, headerY, 13, GOLD);
-            DrawTextOutlined("Engine (next cost)", colEngine, headerY, 13, GOLD);
-            DrawTextOutlined("Tires (next cost)", colTires, headerY, 13, GOLD);
-            DrawTextOutlined("Armor (next cost)", colArmor, headerY, 13, GOLD);
-            DrawTextOutlined("Last AI pick", colPick, headerY, 13, GOLD);
+            int colCar = gx + 18, colCoins = gx + 115, colEngine = gx + 230, colTires = gx + 430, colArmor = gx + 630, colPick = gx + 830;
+            int headerY = gy + 76;
+            DrawTextOutlined("Car", colCar, headerY, 16, GOLD);
+            DrawTextOutlined("Coins", colCoins, headerY, 16, GOLD);
+            DrawTextOutlined("Engine (next cost)", colEngine, headerY, 16, GOLD);
+            DrawTextOutlined("Tires (next cost)", colTires, headerY, 16, GOLD);
+            DrawTextOutlined("Armor (next cost)", colArmor, headerY, 16, GOLD);
+            DrawTextOutlined("Last AI pick", colPick, headerY, 16, GOLD);
 
             auto tierCell = [](int tier, const UpgradeTierInfo* table) -> const char* {
                 if (tier >= UPGRADE_TIER_COUNT) return TextFormat("T%d (MAX)", tier);
@@ -772,37 +1133,39 @@ int main() {
 
             for (int row = 0; row < POP_SIZE; row++) {
                 const CarAgent& a = pop.agents[row];
-                int y = headerY + 24 + row * 26;
+                int y = headerY + 30 + row * 32;
                 Color rowCol = a.alive ? RAYWHITE : (Color){ 130, 130, 130, 255 };
-                DrawRectangle(colCar, y + 2, 10, 10, a.alive ? CAR_COLORS[row] : (Color){ 90, 90, 90, 255 });
-                DrawTextOutlined(TextFormat("Car %d", row + 1), colCar + 16, y, 13, rowCol);
-                DrawTextOutlined(TextFormat("%d", a.coins), colCoins, y, 13, rowCol);
-                DrawTextOutlined(tierCell(a.engineTier, ENGINE_TIERS), colEngine, y, 13, rowCol);
-                DrawTextOutlined(tierCell(a.tireTier, TIRE_TIERS), colTires, y, 13, rowCol);
-                DrawTextOutlined(tierCell(a.armorTier, ARMOR_TIERS), colArmor, y, 13, rowCol);
-                DrawTextOutlined(a.lastUpgrade.c_str(), colPick, y, 13, rowCol);
+                DrawRectangle(colCar, y + 3, 12, 12, a.alive ? CAR_COLORS[row] : (Color){ 90, 90, 90, 255 });
+                DrawTextOutlined(TextFormat("Car %d", row + 1), colCar + 20, y, 16, rowCol);
+                DrawTextOutlined(TextFormat("%d", a.coins), colCoins, y, 16, rowCol);
+                DrawTextOutlined(tierCell(a.engineTier, ENGINE_TIERS), colEngine, y, 16, rowCol);
+                DrawTextOutlined(tierCell(a.tireTier, TIRE_TIERS), colTires, y, 16, rowCol);
+                DrawTextOutlined(tierCell(a.armorTier, ARMOR_TIERS), colArmor, y, 16, rowCol);
+                DrawTextOutlined(a.lastUpgrade.c_str(), colPick, y, 16, rowCol);
             }
 
-            int noteY = headerY + 24 + POP_SIZE * 26 + 14;
+            int noteY = headerY + 30 + POP_SIZE * 32 + 18;
             DrawTextOutlined(TextFormat("Engine: +%.0f%% speed/accel per tier   Tires: +%.0f%% turn rate per tier   Armor: +%.0f max health per tier",
                                          ENGINE_TIER_BONUS * 100.0f, TIRE_TIER_BONUS * 100.0f, ARMOR_TIER_BONUS),
-                              gx + 14, noteY, 13, (Color){ 190, 200, 215, 255 });
-            DrawTextOutlined(TextFormat("Coins: +%d per lap, +%d per %.0f units traveled. Upgrades reset each generation along with everything else.",
-                                         COINS_PER_LAP, COINS_PER_DISTANCE_TICK, DISTANCE_PER_COIN_TICK),
-                              gx + 14, noteY + 18, 13, (Color){ 190, 200, 215, 255 });
+                              gx + 18, noteY, 16, (Color){ 190, 200, 215, 255 });
+            DrawTextOutlined(TextFormat("Coins: +%d per lap, +%d per %.0f units traveled. Upgrades reset each generation UNLESS the brain buys the Keep Setup Pack (%d coins, one-shot).",
+                                         COINS_PER_LAP, COINS_PER_DISTANCE_TICK, DISTANCE_PER_COIN_TICK, PERSIST_PACK_COST),
+                              gx + 18, noteY + 22, 16, (Color){ 190, 200, 215, 255 });
+            DrawTextOutlined("Keep Setup carries THIS slot's tiers into next generation - next gen's brain in that slot is still a mutated descendant, not the same brain.",
+                              gx + 18, noteY + 44, 16, (Color){ 190, 200, 215, 255 });
         }
 
         if (paused) {
             DrawRectangle(0, 0, screenWidth, screenHeight, (Color){ 0, 0, 0, 130 });
             const char* label = "PAUSED";
-            int fontSize = 44;
+            int fontSize = 56;
             int textW = MeasureText(label, fontSize);
-            DrawTextOutlined(label, (screenWidth - textW) / 2, screenHeight / 2 - 40, fontSize, RAYWHITE);
+            DrawTextOutlined(label, (screenWidth - textW) / 2, screenHeight / 2 - 50, fontSize, RAYWHITE);
         }
 
-        DrawPanel(0, screenHeight - 30, screenWidth, 30);
+        DrawPanel(0, screenHeight - 36, screenWidth, 36);
         DrawTextOutlined("ESC pause | TAB settings | G garage | 1-6 follow car | 0 auto-follow | right-drag/scroll camera",
-                          14, screenHeight - 24, 14, (Color){ 220, 220, 220, 255 });
+                          18, screenHeight - 28, 17, (Color){ 220, 220, 220, 255 });
 
         EndTextureMode();
 
@@ -825,7 +1188,9 @@ int main() {
         EndDrawing();
     }
 
-    UnloadModel(track.mesh);
+    UnloadModel(track.mesh);   // also frees roadTexture (UnloadMaterial frees non-default map textures)
+    UnloadModel(groundModel);  // also frees grassTexture, same reason
+    UnloadModel(wallModel);
     UnloadShader(postShader);
     UnloadShader(litShader);
     UnloadRenderTexture(sceneTarget);
