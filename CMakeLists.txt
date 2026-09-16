@@ -14,6 +14,9 @@ add_executable(throw_sim ThrowSim.cpp)
 # Step 1 of the throw game: shows the real vs AI-predicted landing point
 add_executable(throw_game ThrowGame.cpp)
 
+# Racing mode: 6 cars, genetic-algorithm-evolved brains, pure C++ (no Python)
+add_executable(race_game RaceGame.cpp)
+
 # OS-Specific Linking
 if (APPLE)
     # Apple Silicon Homebrew paths
@@ -28,6 +31,7 @@ if (APPLE)
 
     target_link_libraries(beam_sim PRIVATE ${RAYLIB_LIBRARY} ${COCOA_LIBRARY} ${IOKIT_LIBRARY} ${COREVIDEO_LIBRARY} ${OPENGL_LIBRARY})
     target_link_libraries(throw_game PRIVATE ${RAYLIB_LIBRARY} ${COCOA_LIBRARY} ${IOKIT_LIBRARY} ${COREVIDEO_LIBRARY} ${OPENGL_LIBRARY})
+    target_link_libraries(race_game PRIVATE ${RAYLIB_LIBRARY} ${COCOA_LIBRARY} ${IOKIT_LIBRARY} ${COREVIDEO_LIBRARY} ${OPENGL_LIBRARY})
 
 elseif (WIN32)
     # Your existing Windows paths
@@ -35,4 +39,5 @@ elseif (WIN32)
     link_directories("C:/raylib/raylib/src")
     target_link_libraries(beam_sim PRIVATE raylib opengl32 gdi32 winmm)
     target_link_libraries(throw_game PRIVATE raylib opengl32 gdi32 winmm)
+    target_link_libraries(race_game PRIVATE raylib opengl32 gdi32 winmm)
 endif()
