@@ -124,7 +124,13 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    const int throwCount = 700000;
+    // throwCount=1000000 is what the currently-deployed checkpoint
+    // (final_x MAE 4.258, see IMPROVEMENTS.md) was actually trained on -
+    // a prior session dropped this to 700000 while experimenting with
+    // corner-biased sampling below and never restored it, silently
+    // breaking reproducibility (a plain `./throw_sim` no longer regenerates
+    // the dataset the deployed checkpoint matches). Restored here.
+    const int throwCount = 1000000;
     // Uniform random sampling barely ever lands near any one specific
     // corner of the 5D input space (vx,vy,mass,height,wind all near an
     // extreme simultaneously) - that's exactly the region the model does
@@ -133,7 +139,12 @@ int main(int argc, char** argv) {
     // corner-biased throws - independently per axis, so many end up with
     // several parameters extreme at once - to give the network real
     // exposure to that region instead of extrapolating into it blind.
-    const int cornerCount = 200000;
+    // cornerCount=0: two independent retrains on corner-augmented data
+    // (IMPROVEMENTS.md) both made final_x WORSE, not better - this lever
+    // is a documented dead end. Left at 0 (not deleted) so a future,
+    // differently-designed corner-sampling attempt doesn't have to
+    // reinvent biasedSample()/the pinned-corner logic below.
+    const int cornerCount = 0;
     const float cornerPower = 0.35f; // <1 concentrates samples toward the axis extremes
 
     std::random_device rd;
