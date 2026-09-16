@@ -611,11 +611,20 @@ int main() {
         Vector2 predPos = { 0.0f, 1.0f };
         if (state.havePred) {
             // Not a physically simulated path (the model only predicts the
-            // endpoint), just a parabolic arc for visual flight, timed to
-            // land alongside the real ball.
+            // endpoint), just a parabolic arc for visual flight. This used
+            // to reuse animT (scaled to realDuration, the REAL trajectory's
+            // full length including every bounce/settle step - can be many
+            // real seconds for a bouncy throw), so on a throw with a lot of
+            // bounces the gold ball crawled through its single arc for the
+            // whole stretched-out duration, looking stuck/slow. Give it its
+            // own, much shorter duration based on the model's own predicted
+            // timeToLand instead - it reaches its landing spot promptly and
+            // then just sits there while the real ball keeps settling.
+            float predDuration = Clamp(state.predTimeToLand, 0.3f, realDuration > 0.0f ? realDuration : 999.0f);
+            float predAnimT = Clamp(elapsed / predDuration, 0.0f, 1.0f);
             float arcHeight = 8.0f;
-            predPos.x = Lerp(0.0f, state.predX, animT);
-            predPos.y = Lerp(state.height0, state.predY, animT) + arcHeight * sinf(3.14159265f * animT);
+            predPos.x = Lerp(0.0f, state.predX, predAnimT);
+            predPos.y = Lerp(state.height0, state.predY, predAnimT) + arcHeight * sinf(3.14159265f * predAnimT);
         }
 
         if (flying) {
