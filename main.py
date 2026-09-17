@@ -70,6 +70,13 @@ model = ImprovedNeuralNetwork().to(device)
 # dominate the gradient the way squared error would. Trains outputs[:, :7]
 # only - the 8th output (uncertainty) has no ground-truth column, it's
 # trained separately below.
+#
+# X_LOSS_WEIGHT=3.0 on final_x (tried, reverted - see IMPROVEMENTS.md):
+# val loss looked fine and y/maxHeight/bounceCount all improved, but the
+# one thing it was meant to fix got WORSE - final_x MAE 4.284->4.883, and
+# the flagship extreme-corner throw (vx=65,vy=100,mass~max) went from
+# ~68 to ~83 error. Third straight failed attempt at this exact problem,
+# same trade-off pattern as the two corner-sampling attempts.
 criterion = nn.HuberLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
 
